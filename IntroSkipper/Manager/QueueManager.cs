@@ -281,6 +281,8 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
             Duration = duration,
             IntroFingerprintEnd = fingerprintDuration,
             CreditsFingerprintStart = Math.Max(0, duration - maxCreditsDuration),
+            IsShortcut = episode.IsShortcut,
+            ShortcutPath = episode.ShortcutPath,
         });
 
         pluginInstance.TotalQueued++;
@@ -329,6 +331,8 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
             CreditsFingerprintStart = Math.Max(0, duration - pluginInstance.Configuration.MaximumMovieCreditsDuration),
             Category = QueuedMediaCategory.Movie,
             IsExcluded = IsSeriesExcluded(movie.Name),
+            IsShortcut = movie.IsShortcut,
+            ShortcutPath = movie.ShortcutPath,
         });
 
         pluginInstance.TotalQueued++;
@@ -407,11 +411,46 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var path = plugin.GetItemPath(candidate.EpisodeId);
+                _logger.LogInformation("Verifying existence of file {Path} for episode {Name} ({Id})", path, candidate.Name, candidate.EpisodeId);
 
                 if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 {
                     LogSkippingFileNotFound(_logger, candidate.Name, candidate.EpisodeId);
                     continue;
+                }
+
+                // Skip shortcut videos if ProcessShortcutVideos is disabled
+                if (candidate.IsShortcut && !plugin.Configuration.ProcessShortcutVideos)
+                {
+                    _logger.LogDebug("Skipping {Name} ({Id}): shortcut video processing is disabled", candidate.Name, candidate.EpisodeId);
+                    continue;
+                }
+
+                // Jellyfin does not automatically probe .strm duration
+                if (candidate.IsShortcut && candidate.Duration == 0)
+                {
+                    var duration = FFmpegWrapper.ProbeDuration(candidate);
+                    candidate.Duration = duration;
+                    _logger.LogInformation("Probed duration {Duration}s for shortcut video {Name} ({Id})", duration, candidate.Name, candidate.EpisodeId);
+
+                    // Recalculate fingerprint ranges based on actual duration
+                    if (candidate.Category == QueuedMediaCategory.Movie)
+                    {
+                        candidate.CreditsFingerprintStart = Math.Max(0, duration - plugin.Configuration.MaximumMovieCreditsDuration);
+                    }
+                    else
+                    {
+                        var fingerprintDuration = Math.Min(
+                            duration >= 5 * 60 ? duration * _analysisPercent : duration,
+                            60 * plugin.Configuration.AnalysisLengthLimit);
+
+                        var maxCreditsDuration = Math.Min(
+                            duration >= 5 * 60 ? duration * _analysisPercent : duration,
+                            60 * plugin.Configuration.MaximumCreditsDuration);
+
+                        candidate.IntroFingerprintEnd = fingerprintDuration;
+                        candidate.CreditsFingerprintStart = Math.Max(0, duration - maxCreditsDuration);
+                    }
                 }
 
                 verified.Add(candidate);

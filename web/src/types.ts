@@ -16,6 +16,7 @@ export interface PluginConfig {
     MinimumCommercialDuration: number;
     MaximumCommercialDuration: number;
     ProcessThreads: number;
+    ProcessShortcutInterval: number;
     IntroEndOffset: number;
     IntroStartOffset: number;
     SkipbuttonHideDelay: number;
@@ -39,6 +40,7 @@ export interface PluginConfig {
 
     // Feature toggles persisted in the plugin configuration.
     AutoDetectIntros: boolean;
+    ProcessShortcutVideos: boolean;
     AnalyzeSeasonZero: boolean;
     UpdateMediaSegments: boolean;
     UseAlternativeBlackFrameAnalyzer: boolean;
@@ -130,6 +132,7 @@ export type JellyfinMediaItem = {
     Name?: string;
     ProductionYear?: number;
     Type?: string;
+    ProviderIds?: Record<string, string>;
 };
 
 export type JellyfinSeasonItem = {

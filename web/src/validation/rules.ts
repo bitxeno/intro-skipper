@@ -3,6 +3,10 @@ import { MAXIMUM_ANALYSIS_PERCENT, MINIMUM_ANALYSIS_PERCENT } from "../config-li
 
 // Small validation helpers shared by the config store and form fields.
 export type ValidationRule<T> = (value: T) => string | null;
+type FieldValidationRule =
+    | ValidationRule<number>
+    | ValidationRule<string>
+    | ValidationRule<boolean>;
 
 // Rule factories.
 export function range(min: number, max: number): ValidationRule<number> {
@@ -26,7 +30,7 @@ export function validRegex(): ValidationRule<string> {
 }
 
 // Per-field validation rules.
-export const validationRules: Partial<Record<keyof PluginConfig, ValidationRule<any>[]>> = {
+export const validationRules: Partial<Record<keyof PluginConfig, FieldValidationRule[]>> = {
     AnalysisPercent: [range(MINIMUM_ANALYSIS_PERCENT, MAXIMUM_ANALYSIS_PERCENT)],
     AnalysisLengthLimit: [minValue(1)],
     MinimumIntroDuration: [minValue(1)],
@@ -38,6 +42,7 @@ export const validationRules: Partial<Record<keyof PluginConfig, ValidationRule<
     BlackFrameThreshold: [range(16, 255)],
     MaxParallelism: [minValue(1)],
     ProcessThreads: [range(0, 16)],
+    ProcessShortcutInterval: [minValue(0)],
     SkipbuttonHideDelay: [range(0, 1000)],
     SilenceDetectionMaximumNoise: [range(-90, 0)],
     SilenceDetectionMinimumDuration: [minValue(0)],

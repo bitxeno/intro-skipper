@@ -18,6 +18,10 @@ import type {
 // shows and movies analysed by the plugin.
 const SUPPORTED_COLLECTION_TYPES = new Set<string>(["movies", "tvshows", "folders"]);
 
+function hasId<T extends { Id?: string }>(item: T): item is T & { Id: string } {
+    return typeof item.Id === "string" && item.Id.length > 0;
+}
+
 function isSupportedCollectionType(
     collectionType: string | null | undefined,
 ): collectionType is SupportedCollectionType {
@@ -32,9 +36,11 @@ export async function getLibraries(): Promise<LibraryInfo[]> {
     }
     const items = result.data?.Items ?? [];
     return items
-        .filter((item) => item.Id && isSupportedCollectionType(item.CollectionType))
+        .filter((item): item is JellyfinLibraryItem & { Id: string } =>
+            hasId(item) && isSupportedCollectionType(item.CollectionType),
+        )
         .map((item) => ({
-            Id: item.Id!,
+            Id: item.Id,
             Name: item.Name ?? "Unknown",
             CollectionType: (item.CollectionType ?? null) as SupportedCollectionType,
         }));
@@ -59,15 +65,32 @@ export async function getShowsInLibrary(
         return [];
     }
     return (result.data?.Items ?? [])
-        .filter((item) => item.Id)
+        .filter(hasId)
         .map((item) => ({
-            Id: item.Id!,
+            Id: item.Id,
             Name: item.Name ?? "Unknown",
             ProductionYear: item.ProductionYear ?? null,
             Type: item.Type === "Movie" ? "Movie" : "Series",
             LibraryId: libraryId,
             LibraryName: libraryName,
         }));
+}
+
+export async function getProviderIds(itemId: string): Promise<Record<string, string>> {
+    const params = new URLSearchParams({
+        ids: itemId,
+        fields: "ProviderIds",
+    });
+    const result = await getJson<JellyfinItemsResponse<JellyfinMediaItem>>(
+        `Items?${params.toString()}`,
+    );
+
+    if (!result.ok) {
+        console.error("Failed to load provider ids for item", itemId, result.error);
+        return {};
+    }
+
+    return result.data?.Items?.[0]?.ProviderIds ?? {};
 }
 
 export async function getSeasons(seriesId: string): Promise<SeasonItem[]> {
@@ -79,9 +102,9 @@ export async function getSeasons(seriesId: string): Promise<SeasonItem[]> {
         return [];
     }
     return (result.data?.Items ?? [])
-        .filter((item) => item.Id)
+        .filter(hasId)
         .map((item) => ({
-            Id: item.Id!,
+            Id: item.Id,
             Name: item.Name ?? "Unknown",
             IndexNumber: item.IndexNumber ?? null,
         }));
@@ -100,9 +123,9 @@ export async function getEpisodes(seriesId: string, seasonId: string): Promise<E
         return [];
     }
     return (result.data?.Items ?? [])
-        .filter((item) => item.Id)
+        .filter(hasId)
         .map((item) => ({
-            Id: item.Id!,
+            Id: item.Id,
             Name: item.Name ?? "Unknown",
             IndexNumber: item.IndexNumber ?? null,
             RunTimeTicks: item.RunTimeTicks ?? null,

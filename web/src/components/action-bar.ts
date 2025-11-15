@@ -1,8 +1,18 @@
 import { el } from "./dom.ts";
 import { bindStatusMessage, withDashboardLoading } from "./async-feedback.ts";
 import { confirmDialog } from "./confirm-dialog.ts";
+import { theIntroDbSubmitDialog } from "./theintrodb-submit-dialog.ts";
 import * as api from "../store/api.ts";
-import type { AnalyzerActions } from "../types.ts";
+import * as jellyfinClient from "../store/jellyfin-client.ts";
+import * as theIntroDb from "../store/theintrodb-client.ts";
+import type {
+    AnalyzerActions,
+    ApiResult,
+    EpisodeItem,
+    SeasonItem,
+    ShowItem,
+    TimestampMap,
+} from "../types.ts";
 import { delay } from "../utils.ts";
 
 const ANALYZER_ACTION_ORDER: ReadonlyArray<{
@@ -66,10 +76,18 @@ export type ActionBarOptions = {
     onScanComplete: () => void | Promise<void>;
 };
 
+export type ActionBarLoadContext = {
+    show: ShowItem;
+    season: SeasonItem | null;
+    episodes: EpisodeItem[];
+    timestamps: Array<ApiResult<TimestampMap> | null>;
+    isMovie: boolean;
+};
+
 export function actionBar(opts: ActionBarOptions): {
     container: HTMLElement;
     toggle: (open: boolean) => void;
-    loadForSeason: (showId: string, seasonId: string, isMovie: boolean) => Promise<void>;
+    loadForSeason: (context: ActionBarLoadContext) => Promise<void>;
     destroy: () => void;
 } {
     const container = el("div", { className: "ts-action-bar" });
@@ -109,6 +127,11 @@ export function actionBar(opts: ActionBarOptions): {
         { className: "ts-action-btn scan", type: "button" },
         "Scan Season",
     );
+    const submitBtn = el(
+        "button",
+        { className: "ts-action-btn submit", type: "button" },
+        "Submit to TheIntroDB",
+    );
     const eraseBtn = el(
         "button",
         { className: "ts-action-btn erase", type: "button" },
@@ -116,7 +139,7 @@ export function actionBar(opts: ActionBarOptions): {
     );
 
     const buttonsDiv = el("div", { className: "ts-action-buttons" });
-    buttonsDiv.append(applyBtn, scanBtn, eraseBtn);
+    buttonsDiv.append(applyBtn, scanBtn, submitBtn, eraseBtn);
 
     const row = el("div", { className: "ts-action-row" });
     row.append(analyzerGroup, buttonsDiv);
@@ -135,8 +158,12 @@ export function actionBar(opts: ActionBarOptions): {
 
     container.append(row, metaRow, statusEl);
 
-    let currentShowId = "";
+    let currentShow: ShowItem | null = null;
     let currentSeasonId = "";
+    let currentSeasonName = "";
+    let currentSeasonNumber: number | null = null;
+    let currentEpisodes: EpisodeItem[] = [];
+    let currentTimestamps: Array<ApiResult<TimestampMap> | null> = [];
     let currentIsMovie = false;
     let destroyed = false;
     let loadVersion = 0;
@@ -152,6 +179,11 @@ export function actionBar(opts: ActionBarOptions): {
     function resetScanButton(): void {
         scanBtn.disabled = false;
         updateActionLabels();
+    }
+
+    function resetSubmitButton(): void {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit to TheIntroDB";
     }
 
     const handleApplyClick = async () => {
@@ -226,15 +258,16 @@ export function actionBar(opts: ActionBarOptions): {
     };
 
     const handleScanClick = async () => {
-        if (destroyed) return;
+        if (destroyed || !currentShow) return;
+        const showId = currentShow.Id;
 
         const scanToken = ++scanVersion;
         scanBtn.disabled = true;
         statusMessage.show("Starting scan\u2026", "var(--is-text-muted)");
         try {
             const response = await withDashboardLoading(async () => {
-                const seasonId = currentIsMovie ? currentShowId : currentSeasonId;
-                return api.scanSeason(currentShowId, seasonId);
+                const seasonId = currentIsMovie ? showId : currentSeasonId;
+                return api.scanSeason(showId, seasonId);
             });
 
             if (destroyed || scanToken !== scanVersion) {
@@ -266,13 +299,14 @@ export function actionBar(opts: ActionBarOptions): {
     };
 
     const handleEraseClick = async () => {
-        if (destroyed) return;
+                if (destroyed || !currentShow) return;
+                const showId = currentShow.Id;
 
         const label = currentIsMovie ? "movie" : "season";
         const url = currentIsMovie
-            ? "Intros/Show/" + encodeURIComponent(currentShowId)
+                        ? "Intros/Show/" + encodeURIComponent(showId)
             : "Intros/Show/" +
-              encodeURIComponent(currentShowId) +
+                            encodeURIComponent(showId) +
               "/" +
               encodeURIComponent(currentSeasonId);
         const result = await confirmDialog({
@@ -300,6 +334,135 @@ export function actionBar(opts: ActionBarOptions): {
         }
     };
 
+    const handleSubmitClick = async () => {
+        if (destroyed || currentIsMovie || !currentShow) {
+            return;
+        }
+
+        if (currentSeasonNumber == null) {
+            statusMessage.show(
+                "This season has no numeric season number, so it cannot be submitted.",
+                "var(--is-error)",
+            );
+            window.Dashboard.alert(
+                "This season has no numeric season number, so it cannot be submitted.",
+            );
+            return;
+        }
+
+        const providerIds = await jellyfinClient.getProviderIds(currentShow.Id);
+        const { tmdbId, imdbId } = theIntroDb.getExternalIds(providerIds);
+        if (!tmdbId) {
+            statusMessage.show(
+                "This series is missing a TMDB provider ID in Jellyfin.",
+                "var(--is-error)",
+            );
+            window.Dashboard.alert("This series is missing a TMDB provider ID in Jellyfin.");
+            return;
+        }
+
+        const plan = theIntroDb.buildSeasonSubmissionPlan({
+            tmdbId,
+            imdbId,
+            seasonNumber: currentSeasonNumber,
+            episodes: currentEpisodes,
+            timestamps: currentTimestamps,
+        });
+
+        if (plan.length === 0) {
+            statusMessage.show(
+                "No IntroDB-compatible timestamps were found in the current season.",
+                "var(--is-warning)",
+            );
+            window.Dashboard.alert(
+                "No IntroDB-compatible timestamps were found in the current season.",
+            );
+            return;
+        }
+
+        const affectedEpisodes = new Set(plan.map((entry) => entry.episodeId)).size;
+        const dialogResult = await theIntroDbSubmitDialog({
+            title: "Submit Current Season to TheIntroDB",
+            body:
+                "Submit " +
+                String(plan.length) +
+                " segment timestamps from " +
+                String(affectedEpisodes) +
+                " episodes for " +
+                currentShow.Name +
+                (currentSeasonName ? " - " + currentSeasonName : "") +
+                "?",
+            confirmLabel: "Submit",
+            apiKey: theIntroDb.getStoredApiKey(),
+            rememberApiKey: theIntroDb.getStoredApiKey().length > 0,
+        });
+
+        if (destroyed || !dialogResult) {
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Submitting…";
+        statusMessage.show("Submitting timestamps to TheIntroDB…", "var(--is-text-muted)");
+
+        try {
+            const result = await withDashboardLoading(async () =>
+                theIntroDb.submitSeasonPlan(dialogResult.apiKey, plan, (current, total, entry) => {
+                    statusMessage.show(
+                        "Submitting to TheIntroDB… " +
+                            String(current) +
+                            "/" +
+                            String(total) +
+                            " (E" +
+                            String(entry.episodeNumber).padStart(2, "0") +
+                            " " +
+                            entry.segmentLabel +
+                            ")",
+                        "var(--is-text-muted)",
+                    );
+                }),
+            );
+
+            if (result.unauthorized) {
+                theIntroDb.clearStoredApiKey();
+                statusMessage.show("TheIntroDB API key was rejected.", "var(--is-error)");
+                window.Dashboard.alert("TheIntroDB API key was rejected.");
+                return;
+            }
+
+            if (dialogResult.rememberApiKey) {
+                theIntroDb.storeApiKey(dialogResult.apiKey);
+            } else {
+                theIntroDb.clearStoredApiKey();
+            }
+
+            const summary =
+                "Submitted " +
+                String(result.submitted) +
+                " segments" +
+                (result.conflicts > 0
+                    ? ", skipped " + String(result.conflicts) + " duplicates"
+                    : "") +
+                (result.failed > 0 ? ", failed " + String(result.failed) : "") +
+                ".";
+
+            statusMessage.show(
+                summary,
+                result.failed > 0 ? "var(--is-warning)" : "var(--is-success)",
+            );
+            window.Dashboard.alert(
+                result.failed > 0 && result.errors.length > 0
+                    ? summary + " First error: " + result.errors[0]
+                    : summary,
+            );
+        } catch {
+            statusMessage.show("Failed to submit timestamps to TheIntroDB.", "var(--is-error)");
+            window.Dashboard.alert("Failed to submit timestamps to TheIntroDB.");
+        } finally {
+            resetSubmitButton();
+        }
+    };
+
     async function resolveEditorLink(): Promise<void> {
         try {
             const plugins = await api.checkPlugins();
@@ -324,6 +487,7 @@ export function actionBar(opts: ActionBarOptions): {
 
     applyBtn.addEventListener("click", handleApplyClick);
     scanBtn.addEventListener("click", handleScanClick);
+    submitBtn.addEventListener("click", handleSubmitClick);
     eraseBtn.addEventListener("click", handleEraseClick);
 
     return {
@@ -333,24 +497,30 @@ export function actionBar(opts: ActionBarOptions): {
             container.classList.toggle("open", open);
         },
 
-        async loadForSeason(showId: string, seasonId: string, isMovie: boolean) {
+        async loadForSeason(context: ActionBarLoadContext) {
             if (destroyed) return;
 
             const loadToken = ++loadVersion;
             scanVersion += 1;
-            currentShowId = showId;
-            currentSeasonId = seasonId;
-            currentIsMovie = isMovie;
+            currentShow = context.show;
+            currentSeasonId = context.season?.Id ?? context.show.Id;
+            currentSeasonName = context.season?.Name ?? "";
+            currentSeasonNumber = context.season?.IndexNumber ?? null;
+            currentEpisodes = context.episodes;
+            currentTimestamps = context.timestamps;
+            currentIsMovie = context.isMovie;
 
             resetScanButton();
+            resetSubmitButton();
             statusMessage.clear();
 
             // Analyzer overrides only apply to seasons, not single movies.
-            analyzerGroup.style.display = isMovie ? "none" : "";
-            applyBtn.style.display = isMovie ? "none" : "";
+            analyzerGroup.style.display = context.isMovie ? "none" : "";
+            applyBtn.style.display = context.isMovie ? "none" : "";
+            submitBtn.style.display = context.isMovie ? "none" : "";
 
-            if (!isMovie) {
-                const result = await api.getAnalyzerActions(seasonId);
+            if (!context.isMovie) {
+                const result = await api.getAnalyzerActions(currentSeasonId);
                 if (destroyed || loadToken !== loadVersion) {
                     return;
                 }
@@ -385,6 +555,7 @@ export function actionBar(opts: ActionBarOptions): {
             scanVersion += 1;
             applyBtn.removeEventListener("click", handleApplyClick);
             scanBtn.removeEventListener("click", handleScanClick);
+            submitBtn.removeEventListener("click", handleSubmitClick);
             eraseBtn.removeEventListener("click", handleEraseClick);
         },
     };

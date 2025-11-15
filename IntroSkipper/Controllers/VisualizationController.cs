@@ -233,7 +233,7 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
                         LogStartRescan(_logger, seasonId);
 
                         // Erase season timestamps and cache first
-                        await EraseSeasonAsync(seriesId, seasonId, true, CancellationToken.None).ConfigureAwait(false);
+                        // await EraseSeasonAsync(seriesId, seasonId, true, CancellationToken.None).ConfigureAwait(false);
 
                         var baseIntroAnalyzer = new BaseItemAnalyzerTask(
                             _loggerFactory.CreateLogger<DetectSegmentsTask>(),

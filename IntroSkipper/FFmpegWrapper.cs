@@ -14,6 +14,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using IntroSkipper.Data;
 using IntroSkipper.Db;
+using IntroSkipper.Helper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -159,7 +160,7 @@ public static partial class FFmpegWrapper
     {
         if (Logger is { } detectLogger)
         {
-            LogDetectingSilence(detectLogger, episode.Path, range.Start, range.End, episode.EpisodeId);
+            LogDetectingSilence(detectLogger, episode.IsShortcut ? episode.ShortcutPath : episode.Path, range.Start, range.End, episode.EpisodeId);
         }
 
         // -vn, -sn, -dn: ignore video, subtitle, and data tracks
@@ -168,7 +169,7 @@ public static partial class FFmpegWrapper
         {
             "-vn", "-sn", "-dn",
             "-ss", range.Start.ToString(CultureInfo.InvariantCulture),
-            "-i", episode.Path,
+            "-i", episode.IsShortcut ? episode.ShortcutPath : episode.Path,
             "-to", range.Duration.ToString(CultureInfo.InvariantCulture),
             "-af", $"silencedetect=noise={noise}dB:duration=0.1",
             "-f", "null", "-",
@@ -193,6 +194,7 @@ public static partial class FFmpegWrapper
          * [silencedetect @ 0x000000000000] silence_start: 12.34
          * [silencedetect @ 0x000000000000] silence_end: 56.123 | silence_duration: 43.783
         */
+        using var shortcutLease = ShortcutProcessingThrottle.Acquire(episode);
         var raw = Encoding.UTF8.GetString(GetOutput(args, true));
         var result = ParseSilenceRaw(raw, range.Start);
         WriteJsonCache(episode.EpisodeId, mode, CacheEntryType.Silence, range.Start, range.End, result);
@@ -220,7 +222,7 @@ public static partial class FFmpegWrapper
         var args = new List<string>
         {
             "-ss", range.Start.ToString(CultureInfo.InvariantCulture),
-            "-i", episode.Path,
+            "-i", episode.IsShortcut ? episode.ShortcutPath : episode.Path,
             "-to", range.Duration.ToString(CultureInfo.InvariantCulture),
             "-an", "-dn", "-sn",
             "-vf", $"blackframe=amount=50:threshold={threshold}",
@@ -240,6 +242,7 @@ public static partial class FFmpegWrapper
             return [.. cached.Where(bf => bf.Percentage >= minimum)];
         }
 
+        using var shortcutLease = ShortcutProcessingThrottle.Acquire(episode);
         var raw = Encoding.UTF8.GetString(GetOutput(args, true));
         var allFrames = ParseBlackFrame(raw);
         WriteJsonCache(episode.EpisodeId, mode, CacheEntryType.BlackFrame, range.Start, range.End, allFrames);
@@ -262,7 +265,7 @@ public static partial class FFmpegWrapper
         {
             "-skip_frame", "nokey",
             "-ss", episode.CreditsFingerprintStart.ToString(CultureInfo.InvariantCulture),
-            "-i", episode.Path,
+            "-i", episode.IsShortcut ? episode.ShortcutPath : episode.Path,
             "-an", "-dn", "-sn",
             "-vf", $"blackframe=amount=0:threshold={threshold}",
             "-f", "null", "-",
@@ -280,6 +283,7 @@ public static partial class FFmpegWrapper
             return cached;
         }
 
+        using var shortcutLease = ShortcutProcessingThrottle.Acquire(episode);
         var raw = Encoding.UTF8.GetString(GetOutput(args, true));
         var allFrames = ParseBlackFrame(raw);
         WriteJsonCache(episode.EpisodeId, AnalysisMode.Credits, CacheEntryType.BlackFrame, episode.CreditsFingerprintStart, 0, allFrames);
@@ -381,7 +385,7 @@ public static partial class FFmpegWrapper
         {
             "-skip_frame", "nokey",
             "-ss", range.Start.ToString(CultureInfo.InvariantCulture),
-            "-i", episode.Path,
+            "-i", episode.IsShortcut ? episode.ShortcutPath : episode.Path,
             "-to", range.Duration.ToString(CultureInfo.InvariantCulture),
             "-an", "-dn", "-sn",
             "-vf", "showinfo",
@@ -401,6 +405,7 @@ public static partial class FFmpegWrapper
             return cached;
         }
 
+        using var shortcutLease = ShortcutProcessingThrottle.Acquire(episode);
         var raw = Encoding.UTF8.GetString(GetOutput(args, stderr: true));
         var result = ParseKeyFramesRaw(raw, range.Start);
         WriteJsonCache(episode.EpisodeId, mode, CacheEntryType.Keyframe, range.Start, range.End, result);
@@ -573,6 +578,105 @@ public static partial class FFmpegWrapper
     }
 
     /// <summary>
+    /// Get media duration as runtime ticks via ffprobe.
+    /// Does not use cache.
+    /// Returns 0 when duration cannot be parsed from output.
+    /// </summary>
+    /// <param name="path">Full path of the media to probe.</param>
+    /// <returns>Duration (seconds).</returns>
+    public static double ProbeDuration(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        Logger?.LogTrace("Probing duration for \"{File}\"", path);
+
+        // Use ffprobe to get duration in seconds
+        var args = string.Format(
+            CultureInfo.InvariantCulture,
+            "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{0}\"",
+            path);
+
+        var raw = Encoding.UTF8.GetString(GetProbeOutput(args, timeout: 15_000));
+
+        // Try to parse the duration as a double (seconds)
+        if (!double.TryParse(raw.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var durationSeconds))
+        {
+            Logger?.LogDebug("Duration not found or N/A for \"{File}\"", path);
+            return 0L;
+        }
+
+        return durationSeconds;
+    }
+
+    /// <summary>
+    /// Get media duration as runtime ticks via ffprobe.
+    /// Applies shortcut throttling when needed.
+    /// </summary>
+    /// <param name="episode">Media item to probe.</param>
+    /// <returns>Duration (seconds).</returns>
+    public static double ProbeDuration(QueuedEpisode episode)
+    {
+        ArgumentNullException.ThrowIfNull(episode);
+
+        using var shortcutLease = ShortcutProcessingThrottle.Acquire(episode);
+        return ProbeDuration(episode.IsShortcut ? episode.ShortcutPath : episode.Path);
+    }
+
+    /// <summary>
+    /// Runs ffprobe and returns standard output.
+    /// </summary>
+    /// <param name="args">Arguments to pass to ffprobe.</param>
+    /// <param name="timeout">Timeout (in milliseconds) to wait for ffprobe to exit.</param>
+    private static ReadOnlySpan<byte> GetProbeOutput(
+        string args,
+        int timeout = 60 * 1000)
+    {
+        var ffprobePath = Plugin.Instance?.FFmpegPath != null
+            ? Regex.Replace(Plugin.Instance.FFmpegPath, @"ffmpeg$", "ffprobe", RegexOptions.IgnoreCase)
+            : "ffprobe";
+
+        var info = new ProcessStartInfo(ffprobePath, args)
+        {
+            WindowStyle = ProcessWindowStyle.Hidden,
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            ErrorDialog = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = false
+        };
+
+        using var ffprobe = new Process { StartInfo = info };
+        Logger?.LogDebug("Starting ffprobe with the following arguments: {Arguments}", ffprobe.StartInfo.Arguments);
+
+        ffprobe.Start();
+
+        try
+        {
+            ffprobe.PriorityClass = Plugin.Instance?.Configuration.ProcessPriority ?? ProcessPriorityClass.BelowNormal;
+        }
+        catch (Exception e)
+        {
+            Logger?.LogDebug("ffprobe priority could not be modified. {Message}", e.Message);
+        }
+
+        using var ms = new MemoryStream();
+        var buf = new byte[4096];
+
+        using (var streamReader = ffprobe.StandardOutput)
+        {
+            int bytesRead;
+            while ((bytesRead = streamReader.BaseStream.Read(buf, 0, buf.Length)) > 0)
+            {
+                ms.Write(buf, 0, bytesRead);
+            }
+        }
+
+        ffprobe.WaitForExit(timeout);
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
     /// Fingerprint a queued episode.
     /// </summary>
     /// <param name="episode">Queued episode to fingerprint.</param>
@@ -595,13 +699,13 @@ public static partial class FFmpegWrapper
 
         if (Logger is { } fingerprintLogger)
         {
-            LogFingerprinting(fingerprintLogger, start, end, episode.Path, episode.EpisodeId);
+            LogFingerprinting(fingerprintLogger, start, end, episode.IsShortcut ? episode.ShortcutPath : episode.Path, episode.EpisodeId);
         }
 
         var args = new List<string>
         {
             "-ss", start.ToString(CultureInfo.InvariantCulture),
-            "-i", episode.Path,
+            "-i", episode.IsShortcut ? episode.ShortcutPath : episode.Path,
             "-to", (end - start).ToString(CultureInfo.InvariantCulture),
             "-ac", "2",
             "-f", "chromaprint",
@@ -610,6 +714,7 @@ public static partial class FFmpegWrapper
         };
 
         // Returns all fingerprint points as raw 32-bit unsigned integers (little endian).
+        using var shortcutLease = ShortcutProcessingThrottle.Acquire(episode);
         var rawPoints = GetOutput(args);
         if (rawPoints.Length == 0 || rawPoints.Length % 4 != 0)
         {

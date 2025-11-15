@@ -96,6 +96,20 @@ export const generalTab: Tab = {
                     "Note: Shows containing both a specials and extra folder will identify extras as season 0 and ignore specials, regardless of this setting.",
             }),
             checkboxField({
+                id: "ProcessShortcutVideos",
+                label: "Process Shortcut Videos",
+                description:
+                    "Enable this option to process shortcut videos instead of the original files.",
+            }),
+            numberField({
+                id: "ProcessShortcutInterval",
+                label: "Shortcut processing interval (in seconds)",
+                min: 0,
+                description:
+                    "Wait this many seconds between processing different shortcut-backed media files to avoid upstream rate limits. Defaults to 600 seconds (10 minutes).",
+                visible: () => configStore.get("ProcessShortcutVideos") === true,
+            }),
+            checkboxField({
                 id: "UseFileTransformationPlugin",
                 label: "Use File Transformation Plugin to patch the web interface",
                 disabled: () => !configStore.get("FileTransformationPluginEnabled"),

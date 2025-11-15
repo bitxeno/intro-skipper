@@ -37,6 +37,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public const int DefaultMinimumIntroDuration = 15;
 
     /// <summary>
+    /// Default interval (in seconds) to wait between processing shortcut-backed media files.
+    /// </summary>
+    public const int DefaultProcessShortcutInterval = 10 * 60;
+
+    /// <summary>
     /// Minimum percentage of each episode's audio track to analyze.
     /// </summary>
     public const int MinimumAnalysisPercent = 1;
@@ -47,6 +52,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public const int MaximumAnalysisPercent = 50;
 
     private int _analysisPercent = DefaultAnalysisPercent;
+    private int _processShortcutInterval = DefaultProcessShortcutInterval;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginConfiguration"/> class.
@@ -71,6 +77,20 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether to analyze season 0.
     /// </summary>
     public bool AnalyzeSeasonZero { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to process IsShortcut videos.
+    /// </summary>
+    public bool ProcessShortcutVideos { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the interval (in seconds) to wait between processing shortcut-backed media files.
+    /// </summary>
+    public int ProcessShortcutInterval
+    {
+        get => _processShortcutInterval;
+        set => _processShortcutInterval = Math.Max(0, value);
+    }
 
     /// <summary>
     /// Gets or sets a value indicating whether to only use chromaprint.

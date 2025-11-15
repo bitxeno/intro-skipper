@@ -296,7 +296,13 @@ export function createTimestampsBrowser(container: HTMLElement): { destroy: () =
             }
 
             epList.render(episodes, timestamps);
-            await actions.loadForSeason(show.Id, season.Id, false);
+            await actions.loadForSeason({
+                show,
+                season,
+                episodes,
+                timestamps,
+                isMovie: false,
+            });
         } catch (err) {
             if (!nav$.isCurrentPanel(panelToken)) return;
             epList.setStatus(
@@ -334,7 +340,13 @@ export function createTimestampsBrowser(container: HTMLElement): { destroy: () =
             if (!nav$.isCurrentPanel(panelToken)) return;
 
             epList.render([movieEp], [result], true);
-            await actions.loadForSeason(show.Id, show.Id, true);
+            await actions.loadForSeason({
+                show,
+                season: null,
+                episodes: [movieEp],
+                timestamps: [result],
+                isMovie: true,
+            });
         } catch (err) {
             if (!nav$.isCurrentPanel(panelToken)) return;
             epList.setStatus(
