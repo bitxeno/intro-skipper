@@ -1,7 +1,7 @@
 import type { ApiResult, EpisodeItem, TimestampMap } from "../types.ts";
+import { loadPluginConfig } from "./api.ts";
 
 const API_BASE_URL = "https://api.theintrodb.org/v2";
-const API_KEY_STORAGE_KEY = "intro-skipper.theintrodb.api-key";
 const END_OF_MEDIA_TOLERANCE_SEC = 1;
 
 type SupportedTimestampKey = "Introduction" | "Recap" | "Credits" | "Preview";
@@ -86,28 +86,9 @@ function normalizeEnd(
     return end;
 }
 
-export function getStoredApiKey(): string {
-    try {
-        return window.localStorage.getItem(API_KEY_STORAGE_KEY) ?? "";
-    } catch {
-        return "";
-    }
-}
-
-export function storeApiKey(apiKey: string): void {
-    try {
-        window.localStorage.setItem(API_KEY_STORAGE_KEY, apiKey);
-    } catch {
-        // Ignore storage failures and keep the key in-memory for the current request only.
-    }
-}
-
-export function clearStoredApiKey(): void {
-    try {
-        window.localStorage.removeItem(API_KEY_STORAGE_KEY);
-    } catch {
-        // Ignore storage failures.
-    }
+export async function getConfiguredApiKey(): Promise<string> {
+    const config = await loadPluginConfig();
+    return config.TheIntroDbApiKey?.trim() ?? "";
 }
 
 export function getExternalIds(providerIds: Record<string, string> | undefined): {

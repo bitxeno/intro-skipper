@@ -16,10 +16,10 @@ export function textField(opts: TextFieldOptions): HTMLElement {
     container.append(label);
 
     const inputAttrs: Record<string, string> = {
-        type: "text",
+        type: opts.inputType ?? "text",
         id: inputId,
         name: opts.id,
-        autocomplete: "off",
+        autocomplete: opts.autocomplete ?? "off",
     };
     if (opts.placeholder) inputAttrs.placeholder = opts.placeholder;
 

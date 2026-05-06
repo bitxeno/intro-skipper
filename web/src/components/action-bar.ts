@@ -1,7 +1,6 @@
 import { el } from "./dom.ts";
 import { bindStatusMessage, withDashboardLoading } from "./async-feedback.ts";
 import { confirmDialog } from "./confirm-dialog.ts";
-import { theIntroDbSubmitDialog } from "./theintrodb-submit-dialog.ts";
 import * as api from "../store/api.ts";
 import * as jellyfinClient from "../store/jellyfin-client.ts";
 import * as theIntroDb from "../store/theintrodb-client.ts";
@@ -379,8 +378,23 @@ export function actionBar(opts: ActionBarOptions): {
             return;
         }
 
+        let configuredApiKey = "";
+        try {
+            configuredApiKey = await theIntroDb.getConfiguredApiKey();
+        } catch {
+            statusMessage.show("Failed to load the TheIntroDB API key from configuration.", "var(--is-error)");
+            window.Dashboard.alert("Failed to load the TheIntroDB API key from configuration.");
+            return;
+        }
+
+        if (!configuredApiKey) {
+            statusMessage.show("Set the TheIntroDB API key in General settings first.", "var(--is-error)");
+            window.Dashboard.alert("Set the TheIntroDB API key in General settings first.");
+            return;
+        }
+
         const affectedEpisodes = new Set(plan.map((entry) => entry.episodeId)).size;
-        const dialogResult = await theIntroDbSubmitDialog({
+        const dialogResult = await confirmDialog({
             title: "Submit Current Season to TheIntroDB",
             body:
                 "Submit " +
@@ -390,10 +404,8 @@ export function actionBar(opts: ActionBarOptions): {
                 " episodes for " +
                 currentShow.Name +
                 (currentSeasonName ? " - " + currentSeasonName : "") +
-                "?",
+                "? This will use the TheIntroDB API key configured on the server.",
             confirmLabel: "Submit",
-            apiKey: theIntroDb.getStoredApiKey(),
-            rememberApiKey: theIntroDb.getStoredApiKey().length > 0,
         });
 
         if (destroyed || !dialogResult) {
@@ -406,7 +418,7 @@ export function actionBar(opts: ActionBarOptions): {
 
         try {
             const result = await withDashboardLoading(async () =>
-                theIntroDb.submitSeasonPlan(dialogResult.apiKey, plan, (current, total, entry) => {
+                theIntroDb.submitSeasonPlan(configuredApiKey, plan, (current, total, entry) => {
                     statusMessage.show(
                         "Submitting to TheIntroDB… " +
                             String(current) +
@@ -423,16 +435,9 @@ export function actionBar(opts: ActionBarOptions): {
             );
 
             if (result.unauthorized) {
-                theIntroDb.clearStoredApiKey();
                 statusMessage.show("TheIntroDB API key was rejected.", "var(--is-error)");
                 window.Dashboard.alert("TheIntroDB API key was rejected.");
                 return;
-            }
-
-            if (dialogResult.rememberApiKey) {
-                theIntroDb.storeApiKey(dialogResult.apiKey);
-            } else {
-                theIntroDb.clearStoredApiKey();
             }
 
             const summary =

@@ -74,6 +74,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool AutoDetectIntros { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets the TheIntroDB API key used when submitting timestamps.
+    /// </summary>
+    public string TheIntroDbApiKey { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets a value indicating whether to analyze season 0.
     /// </summary>
     public bool AnalyzeSeasonZero { get; set; }

@@ -31,6 +31,7 @@ export interface PluginConfig {
     // String settings persisted in the plugin configuration.
     ProcessPriority: string;
     CacheCompressionLevel: "NoCompression" | "Fastest" | "Optimal" | "SmallestSize";
+    TheIntroDbApiKey: string;
     ChapterAnalyzerIntroductionPattern: string;
     ChapterAnalyzerEndCreditsPattern: string;
     ChapterAnalyzerPreviewPattern: string;
@@ -203,6 +204,8 @@ export type NumberFieldOptions = FieldOptions<number> & {
 
 export type TextFieldOptions = FieldOptions<string> & {
     placeholder?: string;
+    inputType?: HTMLInputElement["type"];
+    autocomplete?: string;
 };
 
 export type SelectFieldOptions = FieldOptions<string> & {

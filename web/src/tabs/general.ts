@@ -82,6 +82,15 @@ export const generalTab: Tab = {
                 description:
                     "Exclude series from analysis. Enter a comma-separated list of series names to exclude.",
             }),
+            textField({
+                id: "TheIntroDbApiKey",
+                label: "TheIntroDB API key",
+                inputType: "password",
+                autocomplete: "new-password",
+                description:
+                    "Stored in the plugin configuration on the server and used when submitting timestamps to TheIntroDB.",
+                placeholder: "Paste your TheIntroDB API key",
+            }),
             inlineCheckboxGroup("Analyze for:", [
                 { id: "ScanIntroduction", label: "Introduction" },
                 { id: "ScanCredits", label: "Credits" },
