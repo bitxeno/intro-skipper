@@ -211,14 +211,13 @@ export function actionBar(opts: ActionBarOptions): {
     };
 
     const pollForScanCompletion = async (scanToken: number): Promise<void> => {
-        const MAX_POLL_ATTEMPTS = 300; // ~10 minutes with base interval
-        const BASE_INTERVAL = 1000;
-        const MAX_INTERVAL = 10_000;
+        const BASE_INTERVAL = 5000;
+        const MAX_INTERVAL = 30_000;
 
         let attempts = 0;
         let interval = BASE_INTERVAL;
 
-        while (!destroyed && scanToken === scanVersion && attempts < MAX_POLL_ATTEMPTS) {
+        while (!destroyed && scanToken === scanVersion) {
             await delay(interval);
             if (destroyed || scanToken !== scanVersion) {
                 return;
