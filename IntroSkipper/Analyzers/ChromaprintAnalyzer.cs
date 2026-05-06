@@ -80,6 +80,57 @@ public partial class ChromaprintAnalyzer(ILogger<ChromaprintAnalyzer> logger) : 
             }
         }
 
+        var firstEpisode = analysisQueue.FirstOrDefault(episode => episode.Category != QueuedMediaCategory.Movie);
+        if (firstEpisode is not null)
+        {
+            if (!fingerprintCache.TryGetValue(firstEpisode.EpisodeId, out var firstEpisodeFingerprint))
+            {
+                try
+                {
+                    _logger.LogInformation("Computing fingerprint for first episode {Name} ({Id})", firstEpisode.Name, firstEpisode.EpisodeId);
+                    firstEpisodeFingerprint = FFmpegWrapper.Fingerprint(firstEpisode, mode);
+                }
+                catch (FingerprintException ex)
+                {
+                    LogCaughtFingerprintError(ex);
+                    WarningManager.SetFlag(PluginWarning.InvalidChromaprintFingerprint);
+
+                    firstEpisodeFingerprint = [];
+                }
+
+                fingerprintCache[firstEpisode.EpisodeId] = firstEpisodeFingerprint;
+            }
+
+            if (firstEpisodeFingerprint.Length > 0)
+            {
+                foreach (var episode in episodeAnalysisQueue)
+                {
+                    if (episode.EpisodeId == firstEpisode.EpisodeId)
+                    {
+                        continue;
+                    }
+
+                    var (episodeIntro, firstEpisodeIntro) = CompareEpisodes(
+                        episode.EpisodeId,
+                        fingerprintCache[episode.EpisodeId],
+                        firstEpisode.EpisodeId,
+                        firstEpisodeFingerprint);
+
+                    if (episodeIntro.Valid && episodeIntro.Duration <= GetMaximumIntroDuration(episode))
+                    {
+                        OffsetIntroForCredits(episodeIntro, episode);
+                        StoreIntroIfLonger(seasonIntros, episodeIntro);
+                    }
+
+                    if (firstEpisodeIntro.Valid && firstEpisodeIntro.Duration <= GetMaximumIntroDuration(firstEpisode))
+                    {
+                        OffsetIntroForCredits(firstEpisodeIntro, firstEpisode);
+                        StoreIntroIfLonger(seasonIntros, firstEpisodeIntro);
+                    }
+                }
+            }
+        }
+
         // While there are still episodes in the queue
         while (episodeAnalysisQueue.Count > 0)
         {
@@ -127,22 +178,8 @@ public partial class ChromaprintAnalyzer(ILogger<ChromaprintAnalyzer> logger) : 
                     remainingIntro.End += remainingEpisode.CreditsFingerprintStart;
                 }
 
-                // Only save the discovered intro if it is:
-                // - the first intro discovered for this episode
-                // - longer than the previously discovered intro
-                if (
-                    !seasonIntros.TryGetValue(currentIntro.EpisodeId, out var savedCurrentIntro) ||
-                    currentIntro.Duration > savedCurrentIntro.Duration)
-                {
-                    seasonIntros[currentIntro.EpisodeId] = currentIntro;
-                }
-
-                if (
-                    !seasonIntros.TryGetValue(remainingIntro.EpisodeId, out var savedRemainingIntro) ||
-                    remainingIntro.Duration > savedRemainingIntro.Duration)
-                {
-                    seasonIntros[remainingIntro.EpisodeId] = remainingIntro;
-                }
+                StoreIntroIfLonger(seasonIntros, currentIntro);
+                StoreIntroIfLonger(seasonIntros, remainingIntro);
 
                 break;
             }
@@ -157,6 +194,34 @@ public partial class ChromaprintAnalyzer(ILogger<ChromaprintAnalyzer> logger) : 
         }
 
         return analysisQueue;
+    }
+
+    private int GetMaximumIntroDuration(QueuedEpisode episode)
+    {
+        return _analysisMode == AnalysisMode.Introduction
+            ? Plugin.Instance!.Configuration.MaximumIntroDuration
+            : (int)(episode.Duration - episode.CreditsFingerprintStart - 1); // dont allow perfect matches to avoid false positives from duplicates
+    }
+
+    private void OffsetIntroForCredits(Segment intro, QueuedEpisode episode)
+    {
+        if (_analysisMode != AnalysisMode.Credits)
+        {
+            return;
+        }
+
+        intro.Start += episode.CreditsFingerprintStart;
+        intro.End += episode.CreditsFingerprintStart;
+    }
+
+    private static void StoreIntroIfLonger(Dictionary<Guid, Segment> seasonIntros, Segment intro)
+    {
+        if (
+            !seasonIntros.TryGetValue(intro.EpisodeId, out var savedIntro) ||
+            intro.Duration > savedIntro.Duration)
+        {
+            seasonIntros[intro.EpisodeId] = intro;
+        }
     }
 
     /// <summary>

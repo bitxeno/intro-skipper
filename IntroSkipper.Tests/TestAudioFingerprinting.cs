@@ -10,6 +10,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using IntroSkipper.Analyzers;
 using IntroSkipper.Data;
 using Microsoft.Extensions.Logging;
@@ -118,6 +119,26 @@ public class TestAudioFingerprinting
         // because we changed for 0.128 to 0.1238 its 4,952 now but that's too early (<= 5)
         Assert.Equal(0, rhs.Start);
         Assert.Equal(22.1673, rhs.End, 3);
+    }
+
+    [Fact]
+    public void TestStoreIntroIfLongerPrefersLongerSegment()
+    {
+        var method = typeof(ChromaprintAnalyzer).GetMethod(
+            "StoreIntroIfLonger",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var episodeId = Guid.NewGuid();
+        var seasonIntros = new Dictionary<Guid, Segment>();
+
+        method!.Invoke(null, [seasonIntros, new Segment(episodeId, new TimeRange(0, 10))]);
+        method.Invoke(null, [seasonIntros, new Segment(episodeId, new TimeRange(0, 15))]);
+        method.Invoke(null, [seasonIntros, new Segment(episodeId, new TimeRange(0, 12))]);
+
+        Assert.True(seasonIntros.TryGetValue(episodeId, out var intro));
+        Assert.NotNull(intro);
+        Assert.Equal(15, intro!.Duration, 3);
     }
 
     /// <summary>
