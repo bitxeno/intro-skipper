@@ -133,6 +133,54 @@ public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateMan
     }
 
     /// <summary>
+    /// Deletes a single timestamp segment for the provided item.
+    /// </summary>
+    /// <param name="id">Item ID to delete timestamps for.</param>
+    /// <param name="mode">Timestamp mode name.</param>
+    /// <param name="currentStart">Current segment start time in seconds.</param>
+    /// <param name="currentEnd">Current segment end time in seconds.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">Timestamp deleted.</response>
+    /// <response code="400">Invalid timestamp payload.</response>
+    /// <response code="404">Given ID is not an Episode or Movie.</response>
+    /// <returns>No content.</returns>
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [HttpDelete("Episode/{Id}/Timestamp")]
+    public async Task<ActionResult> DeleteTimestampAsync(
+        [FromRoute] Guid id,
+        [FromQuery] string mode,
+        [FromQuery] double currentStart,
+        [FromQuery] double currentEnd,
+        CancellationToken cancellationToken = default)
+    {
+        var rawItem = Plugin.Instance!.GetItem(id);
+        if (rawItem is not Episode and not Movie)
+        {
+            return NotFound();
+        }
+
+        if (!Enum.TryParse(mode, ignoreCase: true, out AnalysisMode analysisMode))
+        {
+            return BadRequest("Unknown timestamp mode.");
+        }
+
+        if (currentStart < 0 || currentEnd <= currentStart)
+        {
+            return BadRequest("Invalid current timestamp range.");
+        }
+
+        var currentSegment = new Segment(id, new TimeRange(currentStart, currentEnd));
+        await Plugin.Instance!.DeleteTimestampAsync(id, analysisMode, currentSegment, cancellationToken).ConfigureAwait(false);
+
+        if (Plugin.Instance.Configuration.UpdateMediaSegments)
+        {
+            await RefreshMediaSegmentsAsync(rawItem.Id, rawItem is Episode e ? e.SeasonId : rawItem.Id, cancellationToken).ConfigureAwait(false);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Gets the timestamps for the provided episode.
     /// </summary>
     /// <param name="id">Episode ID.</param>

@@ -1,4 +1,5 @@
 import { el } from "./dom.ts";
+import { confirmDialog } from "./confirm-dialog.ts";
 import { formatTime } from "../utils.ts";
 
 export type TimestampEditDialogOptions = {
@@ -6,6 +7,7 @@ export type TimestampEditDialogOptions = {
     initialStart: number;
     initialEnd: number;
     onSave: (values: { start: number; end: number }) => Promise<boolean>;
+    onDelete?: () => Promise<boolean>;
 };
 
 let dialogCounter = 0;
@@ -108,6 +110,9 @@ export function timestampEditDialog(opts: TimestampEditDialogOptions): Promise<v
             { className: "is-confirm-btn cancel", type: "button" },
             "Cancel",
         );
+        const deleteBtn = opts.onDelete
+            ? el("button", { className: "is-confirm-btn confirm", type: "button" }, "Delete")
+            : null;
         const saveBtn = el(
             "button",
             { className: "is-confirm-btn primary", type: "button" },
@@ -115,7 +120,11 @@ export function timestampEditDialog(opts: TimestampEditDialogOptions): Promise<v
         );
 
         const actions = el("div", { className: "is-confirm-actions" });
-        actions.append(cancelBtn, saveBtn);
+        if (deleteBtn) {
+            actions.append(cancelBtn, deleteBtn, saveBtn);
+        } else {
+            actions.append(cancelBtn, saveBtn);
+        }
 
         dialog.append(heading, body, helper, startRow, endRow, durationRow, errorEl, actions);
 
@@ -168,15 +177,21 @@ export function timestampEditDialog(opts: TimestampEditDialogOptions): Promise<v
 
         function updateButtonState(): void {
             saveBtn.disabled = isSaving || !isValid();
+            if (deleteBtn) {
+                deleteBtn.disabled = isSaving;
+            }
         }
 
-        function setSaving(value: boolean): void {
+        function setSaving(action: "save" | "delete", value: boolean): void {
             isSaving = value;
             startInput.disabled = value;
             endInput.disabled = value;
             durationInput.disabled = value;
             cancelBtn.disabled = value;
-            saveBtn.textContent = value ? "Saving…" : "Save";
+            saveBtn.textContent = value && action === "save" ? "Saving…" : "Save";
+            if (deleteBtn) {
+                deleteBtn.textContent = value && action === "delete" ? "Deleting…" : "Delete";
+            }
             updateButtonState();
         }
 
@@ -194,7 +209,7 @@ export function timestampEditDialog(opts: TimestampEditDialogOptions): Promise<v
                 return;
             }
 
-            setSaving(true);
+            setSaving("save", true);
             setError("");
 
             try {
@@ -209,7 +224,40 @@ export function timestampEditDialog(opts: TimestampEditDialogOptions): Promise<v
                 setError("Failed to save timestamp.");
             }
 
-            setSaving(false);
+            setSaving("save", false);
+        }
+
+        async function handleDelete(): Promise<void> {
+            if (isSaving || !opts.onDelete) {
+                return;
+            }
+
+            const result = await confirmDialog({
+                title: "Delete Timestamp",
+                body: "Delete this timestamp? This cannot be undone.",
+                confirmLabel: "Delete",
+            });
+
+            if (!result) {
+                return;
+            }
+
+            setSaving("delete", true);
+            setError("");
+
+            try {
+                const deleted = await opts.onDelete();
+                if (deleted) {
+                    cleanup();
+                    return;
+                }
+
+                setError("Failed to delete timestamp.");
+            } catch {
+                setError("Failed to delete timestamp.");
+            }
+
+            setSaving("delete", false);
         }
 
         startInput.addEventListener("input", () => {
@@ -229,6 +277,11 @@ export function timestampEditDialog(opts: TimestampEditDialogOptions): Promise<v
         saveBtn.addEventListener("click", () => {
             void handleSave();
         });
+        if (deleteBtn) {
+            deleteBtn.addEventListener("click", () => {
+                void handleDelete();
+            });
+        }
 
         dialog.addEventListener("cancel", (event) => {
             event.preventDefault();

@@ -221,6 +221,23 @@ export function episodeList(): {
                             rebuildList(true);
                             return true;
                         },
+                        onDelete: async () => {
+                            const response = await api.deleteEpisodeTimestamp(ep.Id, {
+                                mode: mode.key,
+                                currentStart: seg.Start,
+                                currentEnd: seg.End,
+                            });
+
+                            if (!response.ok) {
+                                return false;
+                            }
+
+                            const nextMap = { ...(timestampMap ?? {}) };
+                            delete nextMap[mode.key];
+                            commitTimestampResult({ ok: true, status: response.status, data: nextMap });
+                            rebuildList(true);
+                            return true;
+                        },
                     });
                 }),
             );

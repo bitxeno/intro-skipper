@@ -77,6 +77,12 @@ type UpdateEpisodeTimestampRequest = {
     end: number;
 };
 
+type DeleteEpisodeTimestampRequest = {
+    mode: string;
+    currentStart: number;
+    currentEnd: number;
+};
+
 export function updateEpisodeTimestamp(
     episodeId: string,
     request: UpdateEpisodeTimestampRequest,
@@ -86,6 +92,19 @@ export function updateEpisodeTimestamp(
         "POST",
         JSON.stringify(request),
     );
+}
+
+export function deleteEpisodeTimestamp(
+    episodeId: string,
+    request: DeleteEpisodeTimestampRequest,
+): Promise<Response> {
+    const params = new URLSearchParams({
+        mode: request.mode,
+        currentStart: String(request.currentStart),
+        currentEnd: String(request.currentEnd),
+    });
+
+    return fetchWithAuth(`Episode/${encodeURIComponent(episodeId)}/Timestamp?${params.toString()}`, "DELETE");
 }
 
 // Per-season analyzer actions.
