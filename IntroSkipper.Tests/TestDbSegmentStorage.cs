@@ -292,6 +292,68 @@ public sealed class TestDbSegmentStorage
         }
     }
 
+    [Fact]
+    public async Task CommercialTimestampReplacement_LeavesOtherSegmentsIntact()
+    {
+        var tempDir = Path.Join(Path.GetTempPath(), "IntroSkipper.Tests");
+        var dbFileName = Guid.NewGuid().ToString("N") + ".db";
+        if (Path.IsPathRooted(dbFileName))
+        {
+            throw new ArgumentException("dbFileName must be a relative file name.", nameof(dbFileName));
+        }
+
+        var dbPath = Path.Join(tempDir, dbFileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+
+        var itemId = Guid.NewGuid();
+
+        try
+        {
+            using (var db = new IntroSkipperDbContext(dbPath))
+            {
+                await db.Database.EnsureCreatedAsync();
+                db.DbSegment.AddRange(
+                    new DbSegment(new Segment(itemId, new TimeRange(10, 20)), AnalysisMode.Commercial),
+                    new DbSegment(new Segment(itemId, new TimeRange(30, 40)), AnalysisMode.Commercial));
+                await db.SaveChangesAsync();
+            }
+
+            using (new EntrypointTestHelpers.PluginInstanceScope(EntrypointTestHelpers.CreateTempCacheDir()))
+            {
+                var plugin = Plugin.Instance!;
+                EntrypointTestHelpers.SetPrivateField(plugin, "_dbPath", dbPath);
+                ConfigurePluginLogger(plugin);
+
+                await plugin.DeleteTimestampAsync(
+                    itemId,
+                    AnalysisMode.Commercial,
+                    new Segment(itemId, new TimeRange(10, 20)));
+                await plugin.UpdateTimestampAsync(
+                    new Segment(itemId, new TimeRange(12, 24)),
+                    AnalysisMode.Commercial,
+                    isUserProvided: true);
+            }
+
+            using (var db = new IntroSkipperDbContext(dbPath))
+            {
+                var segments = db.DbSegment
+                    .Where(segment => segment.ItemId == itemId && segment.Type == AnalysisMode.Commercial)
+                    .OrderBy(segment => segment.Start)
+                    .ToArray();
+
+                Assert.Equal(2, segments.Length);
+                Assert.Equal(12, segments[0].Start);
+                Assert.Equal(24, segments[0].End);
+                Assert.Equal(30, segments[1].Start);
+                Assert.Equal(40, segments[1].End);
+            }
+        }
+        finally
+        {
+            DeleteSqliteFiles(dbPath);
+        }
+    }
+
     private static void ConfigurePluginLogger(Plugin plugin)
     {
         using var loggerFactory = LoggerFactory.Create(_ => { });

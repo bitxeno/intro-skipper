@@ -680,7 +680,10 @@ public static partial class FFmpegWrapper
             {
                 ffprobe.Kill();
             }
-            catch { /* ignore if already exited */ }
+            catch
+            {
+                /* ignore if already exited */
+            }
         }
 
         if (ffprobe.ExitCode != 0)

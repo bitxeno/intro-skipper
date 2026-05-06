@@ -74,13 +74,59 @@ public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateMan
 
         if (Plugin.Instance.Configuration.UpdateMediaSegments)
         {
-            var episode = Plugin.Instance!.QueuedMediaItems[rawItem is Episode e ? e.SeasonId : rawItem.Id]
-                .FirstOrDefault(q => q.EpisodeId == rawItem.Id);
+            await RefreshMediaSegmentsAsync(rawItem.Id, rawItem is Episode e ? e.SeasonId : rawItem.Id, cancellationToken).ConfigureAwait(false);
+        }
 
-            if (episode is not null)
-            {
-                await _mediaSegmentUpdateManager.UpdateMediaSegmentsAsync([episode], cancellationToken).ConfigureAwait(false);
-            }
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Updates a single timestamp segment for the provided item.
+    /// </summary>
+    /// <param name="id">Item ID to update timestamps for.</param>
+    /// <param name="request">The timestamp update request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">Timestamp updated.</response>
+    /// <response code="400">Invalid timestamp payload.</response>
+    /// <response code="404">Given ID is not an Episode or Movie.</response>
+    /// <returns>No content.</returns>
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [HttpPost("Episode/{Id}/Timestamp")]
+    public async Task<ActionResult> UpdateTimestampAsync(
+        [FromRoute] Guid id,
+        [FromBody] UpdateTimestampRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var rawItem = Plugin.Instance!.GetItem(id);
+        if (rawItem is not Episode and not Movie)
+        {
+            return NotFound();
+        }
+
+        if (!Enum.TryParse(request.Mode, ignoreCase: true, out AnalysisMode mode))
+        {
+            return BadRequest("Unknown timestamp mode.");
+        }
+
+        if (request.CurrentStart < 0 || request.CurrentEnd <= request.CurrentStart)
+        {
+            return BadRequest("Invalid current timestamp range.");
+        }
+
+        if (request.Start < 0 || request.End <= request.Start)
+        {
+            return BadRequest("Invalid updated timestamp range.");
+        }
+
+        var currentSegment = new Segment(id, new TimeRange(request.CurrentStart, request.CurrentEnd));
+        var updatedSegment = new Segment(id, new TimeRange(request.Start, request.End));
+
+        await Plugin.Instance!.DeleteTimestampAsync(id, mode, currentSegment, cancellationToken).ConfigureAwait(false);
+        await Plugin.Instance!.UpdateTimestampAsync(updatedSegment, mode, isUserProvided: true, cancellationToken).ConfigureAwait(false);
+
+        if (Plugin.Instance.Configuration.UpdateMediaSegments)
+        {
+            await RefreshMediaSegmentsAsync(rawItem.Id, rawItem is Episode e ? e.SeasonId : rawItem.Id, cancellationToken).ConfigureAwait(false);
         }
 
         return NoContent();
@@ -218,5 +264,19 @@ public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateMan
         using var db = Plugin.CreateDbContext();
         await db.RebuildDatabaseAsync(Plugin.CreateDbContext).ConfigureAwait(false);
         return NoContent();
+    }
+
+    private async Task RefreshMediaSegmentsAsync(Guid itemId, Guid queueKey, CancellationToken cancellationToken)
+    {
+        if (!Plugin.Instance!.QueuedMediaItems.TryGetValue(queueKey, out var episodes))
+        {
+            return;
+        }
+
+        var episode = episodes.FirstOrDefault(q => q.EpisodeId == itemId);
+        if (episode is not null)
+        {
+            await _mediaSegmentUpdateManager.UpdateMediaSegmentsAsync([episode], cancellationToken).ConfigureAwait(false);
+        }
     }
 }

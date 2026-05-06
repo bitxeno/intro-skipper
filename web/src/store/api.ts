@@ -69,6 +69,25 @@ export function getEpisodeTimestamps(episodeId: string): Promise<ApiResult<Times
     return getJson<TimestampMap>(`Episode/${encodeURIComponent(episodeId)}/Timestamps`);
 }
 
+type UpdateEpisodeTimestampRequest = {
+    mode: string;
+    currentStart: number;
+    currentEnd: number;
+    start: number;
+    end: number;
+};
+
+export function updateEpisodeTimestamp(
+    episodeId: string,
+    request: UpdateEpisodeTimestampRequest,
+): Promise<Response> {
+    return fetchWithAuth(
+        `Episode/${encodeURIComponent(episodeId)}/Timestamp`,
+        "POST",
+        JSON.stringify(request),
+    );
+}
+
 // Per-season analyzer actions.
 export function getAnalyzerActions(seasonId: string): Promise<ApiResult<AnalyzerActions>> {
     return getJson<AnalyzerActions>(`Intros/AnalyzerActions/${encodeURIComponent(seasonId)}`);
