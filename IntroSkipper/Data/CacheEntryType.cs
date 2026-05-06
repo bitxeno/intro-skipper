@@ -29,4 +29,9 @@ public enum CacheEntryType
     /// Key frame timestamp data.
     /// </summary>
     Keyframe,
+
+    /// <summary>
+    /// Media duration in seconds.
+    /// </summary>
+    Duration,
 }

@@ -6,14 +6,17 @@
 namespace IntroSkipper.Tests;
 
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using IntroSkipper.Configuration;
 using IntroSkipper.Data;
 using IntroSkipper.Db;
+using IntroSkipper.Helper;
 using Xunit;
 
 public sealed class TestCacheOperations
@@ -904,6 +907,74 @@ public sealed class TestCacheOperations
 
         Assert.NotNull(decompressed);
         Assert.Equal(original, decompressed);
+    }
+
+    [Fact]
+    public void ProbeDuration_CacheHit_BypassesShortcutThrottle()
+    {
+        var cacheDir = EntrypointTestHelpers.CreateTempCacheDir();
+        using var scope = new CachingPluginScope(cacheDir);
+
+        var plugin = Plugin.Instance;
+        Assert.NotNull(plugin);
+
+        EntrypointTestHelpers.SetPropertyOrField(
+            plugin,
+            "Configuration",
+            new PluginConfiguration
+            {
+                CacheFingerprints = true,
+                ProcessShortcutInterval = 1,
+            });
+
+        var episode = new QueuedEpisode
+        {
+            EpisodeId = Guid.NewGuid(),
+            IsShortcut = true,
+            Path = Path.Join(cacheDir, "missing.mp4"),
+            ShortcutPath = Path.Join(cacheDir, "missing.mp4"),
+        };
+
+        const double cachedDuration = 123.456;
+        using (var db = Plugin.CreateCacheDbContext())
+        {
+            db.DetectionCache.Add(
+                new DbDetectionCache(
+                    episode.EpisodeId,
+                    AnalysisMode.Introduction,
+                    CacheEntryType.Duration,
+                    FFmpegWrapper.CompressBrotli(new[] { cachedDuration })));
+            db.SaveChanges();
+        }
+
+        var throttleType = typeof(ShortcutProcessingThrottle);
+        var lastEpisodeIdField = throttleType.GetField("_lastEpisodeId", BindingFlags.NonPublic | BindingFlags.Static);
+        var lastCompletedAtField = throttleType.GetField("_lastCompletedAt", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(lastEpisodeIdField);
+        Assert.NotNull(lastCompletedAtField);
+
+        var originalLastEpisodeId = (Guid?)lastEpisodeIdField!.GetValue(null);
+        var originalLastCompletedAt = (DateTimeOffset)lastCompletedAtField!.GetValue(null)!;
+
+        lastEpisodeIdField.SetValue(null, Guid.NewGuid());
+        lastCompletedAtField.SetValue(null, DateTimeOffset.UtcNow);
+
+        try
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var duration = FFmpegWrapper.ProbeDuration(episode);
+            stopwatch.Stop();
+
+            Assert.Equal(cachedDuration, duration, 6);
+            Assert.True(
+                stopwatch.Elapsed < TimeSpan.FromMilliseconds(500),
+                $"Expected cache hit to bypass shortcut throttle, but ProbeDuration took {stopwatch.Elapsed.TotalMilliseconds:F0} ms.");
+        }
+        finally
+        {
+            lastEpisodeIdField.SetValue(null, originalLastEpisodeId);
+            lastCompletedAtField.SetValue(null, originalLastCompletedAt);
+        }
     }
 
     private static uint[] ReadFingerprintFromDb(DetectionCacheDbContext db, Guid itemId, AnalysisMode mode)

@@ -9,7 +9,11 @@ using System.Net.Mime;
 using IntroSkipper.Data;
 using IntroSkipper.Manager;
 using IntroSkipper.ScheduledTasks;
+using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Common.Api;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.IO;
@@ -78,12 +82,8 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<List<EpisodeVisualization>> GetSeasonEpisodes([FromRoute] Guid seriesId, [FromRoute] Guid seasonId)
     {
-        if (!Plugin.Instance!.QueuedMediaItems.TryGetValue(seasonId, out var episodes))
-        {
-            return NotFound();
-        }
-
-        if (!episodes.Any(e => e.SeriesId == seriesId))
+        var episodes = ResolveSeasonEpisodes(seriesId, seasonId);
+        if (episodes.Count == 0)
         {
             return NotFound();
         }
@@ -107,11 +107,7 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> EraseSeasonAsync([FromRoute] Guid seriesId, [FromRoute] Guid seasonId, [FromQuery] bool eraseCache = false, CancellationToken cancellationToken = default)
     {
-        if (!Plugin.Instance!.QueuedMediaItems.TryGetValue(seasonId, out var episodes))
-        {
-            return NotFound();
-        }
-
+        var episodes = ResolveSeasonEpisodes(seriesId, seasonId);
         if (episodes.Count == 0)
         {
             return NotFound();
@@ -141,7 +137,7 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
                 }
             }
 
-            // Batch-load season info and clear episode IDs
+            // Batch-load season info and clear episode IDs.
             var seasonInfos = await db.DbSeasonInfo
                 .Where(s => s.SeasonId == seasonId)
                 .ToListAsync(cancellationToken)
@@ -154,7 +150,7 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
 
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-            if (Plugin.Instance.Configuration.UpdateMediaSegments)
+            if (Plugin.Instance!.Configuration.UpdateMediaSegments)
             {
                 await _mediaSegmentUpdateManager.UpdateMediaSegmentsAsync(episodes, cancellationToken).ConfigureAwait(false);
             }
@@ -170,6 +166,45 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
             LogFailedToEraseTimestamps(_logger, ex, seriesId, seasonId);
             return Problem("An unexpected error occurred while erasing season data.", statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private List<QueuedEpisode> ResolveSeasonEpisodes(Guid seriesId, Guid seasonId)
+    {
+        if (Plugin.Instance!.QueuedMediaItems.TryGetValue(seasonId, out var queuedEpisodes)
+            && queuedEpisodes.Count > 0
+            && queuedEpisodes.Any(e => e.SeriesId == seriesId))
+        {
+            return queuedEpisodes;
+        }
+
+        var query = new InternalItemsQuery
+        {
+            ParentId = seasonId,
+            IncludeItemTypes = [BaseItemKind.Episode],
+            Recursive = false,
+            IsVirtualItem = false,
+            OrderBy = [(ItemSortBy.IndexNumber, SortOrder.Ascending)],
+        };
+
+        return _libraryManager.GetItemList(query, false)
+            .OfType<Episode>()
+            .Where(episode => episode.SeriesId == seriesId)
+            .Select(episode => new QueuedEpisode
+            {
+                SeriesName = episode.SeriesName ?? string.Empty,
+                SeasonNumber = episode.AiredSeasonNumber ?? 0,
+                EpisodeNumber = episode.IndexNumber ?? 0,
+                EpisodeId = episode.Id,
+                SeasonId = episode.SeasonId,
+                SeriesId = episode.SeriesId,
+                Path = episode.Path ?? string.Empty,
+                ShortcutPath = episode.ShortcutPath,
+                Name = episode.Name ?? string.Empty,
+                Category = QueuedMediaCategory.Episode,
+                IsShortcut = episode.IsShortcut,
+                Duration = TimeSpan.FromTicks(episode.RunTimeTicks ?? 0).TotalSeconds,
+            })
+            .ToList();
     }
 
     /// <summary>

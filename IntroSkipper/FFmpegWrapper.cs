@@ -618,9 +618,43 @@ public static partial class FFmpegWrapper
     {
         ArgumentNullException.ThrowIfNull(episode);
 
+        if (TryReadDurationCache(episode.EpisodeId, out var cachedDuration))
+        {
+            return cachedDuration;
+        }
+
         using var shortcutLease = ShortcutProcessingThrottle.Acquire(episode);
-        return ProbeDuration(episode.IsShortcut ? episode.ShortcutPath : episode.Path);
+
+        if (TryReadDurationCache(episode.EpisodeId, out cachedDuration))
+        {
+            return cachedDuration;
+        }
+
+        var duration = ProbeDuration(episode.IsShortcut ? episode.ShortcutPath : episode.Path);
+        if (duration > 0)
+        {
+            WriteDurationCache(episode.EpisodeId, duration);
+        }
+
+        return duration;
     }
+
+    private static bool TryReadDurationCache(Guid episodeId, out double duration)
+    {
+        duration = 0;
+
+        if (!TryReadJsonCache(episodeId, AnalysisMode.Introduction, CacheEntryType.Duration, 0, 0, out double[] cachedDuration)
+            || cachedDuration.Length == 0)
+        {
+            return false;
+        }
+
+        duration = cachedDuration[0];
+        return true;
+    }
+
+    private static void WriteDurationCache(Guid episodeId, double duration)
+        => WriteJsonCache(episodeId, AnalysisMode.Introduction, CacheEntryType.Duration, 0, 0, [duration]);
 
     /// <summary>
     /// Runs ffprobe and returns standard output.
