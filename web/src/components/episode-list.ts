@@ -66,6 +66,7 @@ export function episodeList(): {
 
     let currentEpisodes: EpisodeItem[] = [];
     let currentTimestamps: Array<ApiResult<TimestampMap> | null> = [];
+    let externalTimestampsRef: Array<ApiResult<TimestampMap> | null> | null = null;
     let currentCards: HTMLElement[] = [];
     let filterTimer: ReturnType<typeof setTimeout> | null = null;
     let isBatchSaving = false;
@@ -178,8 +179,12 @@ export function episodeList(): {
         let timestampMap: TimestampMap | null = result?.ok === true ? { ...(result.data ?? {}) } : null;
 
         function commitTimestampResult(nextResult: ApiResult<TimestampMap> | null): void {
-            currentTimestamps[index] = cloneTimestampResult(nextResult);
+            const cloned = cloneTimestampResult(nextResult);
+            currentTimestamps[index] = cloned;
             timestampMap = nextResult?.ok === true ? { ...(nextResult.data ?? {}) } : null;
+            if (externalTimestampsRef) {
+                externalTimestampsRef[index] = cloned;
+            }
         }
 
         function renderTimestampRows(): void {
@@ -370,7 +375,11 @@ export function episodeList(): {
                         ...(currentResult?.ok === true ? currentResult.data ?? {} : {}),
                         [modeKey]: { Start: entry.segment.Start, End: end },
                     };
-                    currentTimestamps[entry.index] = { ok: true, status: response.status, data: nextMap };
+                    const updatedResult = { ok: true, status: response.status, data: nextMap };
+                    currentTimestamps[entry.index] = updatedResult;
+                    if (externalTimestampsRef) {
+                        externalTimestampsRef[entry.index] = updatedResult;
+                    }
                 } else {
                     failed += 1;
                     if (!firstError) {
@@ -469,6 +478,10 @@ export function episodeList(): {
         ) {
             isMovieView = isMovie;
             currentEpisodes = episodes;
+            // Keep a reference to the original timestamps array so updates
+            // performed by this component (e.g. bulk edits) are reflected
+            // for callers that hold the same array (like the action bar).
+            externalTimestampsRef = timestamps;
             currentTimestamps = timestamps.map((result) => cloneTimestampResult(result));
             if (filterTimer) clearTimeout(filterTimer);
             filterInput.value = "";
@@ -492,6 +505,7 @@ export function episodeList(): {
             currentCards = [];
             currentEpisodes = [];
             currentTimestamps = [];
+            externalTimestampsRef = null;
             if (filterTimer) clearTimeout(filterTimer);
             countEl.textContent = "";
             filterInput.value = "";
