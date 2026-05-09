@@ -479,6 +479,31 @@ a {
     white-space: nowrap;
 }
 
+.ts-select-toggle-btn {
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--is-input-border);
+    background: var(--is-input-bg);
+    color: var(--is-text);
+    font-size: 0.85em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ts-select-toggle-btn:hover {
+    background: var(--is-hover-strong);
+}
+
+.ts-select-toggle-btn:focus-visible {
+    outline: 2px solid var(--is-accent);
+    outline-offset: 2px;
+}
+
+.ts-select-toggle-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
 .ts-bulk-edit-btn {
     padding: 5px 10px;
     border-radius: 4px;
@@ -512,6 +537,23 @@ a {
     border-radius: 6px;
     padding: 10px 12px;
     margin-bottom: 6px;
+}
+
+.ts-episode-card.unselected {
+    opacity: 0.72;
+}
+
+.ts-episode-select {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+}
+
+.ts-episode-select-input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--is-accent);
 }
 
 .ts-episode-card-button {

@@ -48,13 +48,25 @@ export function episodeList(): {
     const countEl = el("span", { className: "ts-episode-count" });
     countEl.setAttribute("aria-live", "polite");
     const filterActions = el("div", { className: "ts-filter-actions" });
+    const selectAllButton = el(
+        "button",
+        { className: "ts-select-toggle-btn", type: "button" },
+        "Select all",
+    ) as HTMLButtonElement;
+    selectAllButton.setAttribute("aria-label", "Select all loaded episodes for bulk updates");
+    const invertSelectionButton = el(
+        "button",
+        { className: "ts-select-toggle-btn", type: "button" },
+        "Invert",
+    ) as HTMLButtonElement;
+    invertSelectionButton.setAttribute("aria-label", "Invert episode selection for bulk updates");
     const bulkDurationButton = el(
         "button",
         { className: "ts-bulk-edit-btn", type: "button" },
         "Bulk Duration",
     ) as HTMLButtonElement;
-    bulkDurationButton.setAttribute("aria-label", "Adjust the duration for all loaded timestamps");
-    filterActions.append(countEl, bulkDurationButton);
+    bulkDurationButton.setAttribute("aria-label", "Adjust the duration for selected timestamps");
+    filterActions.append(countEl, selectAllButton, invertSelectionButton, bulkDurationButton);
     filterBar.append(filterInput, filterActions);
 
     const statusEl = el("div", { className: "ts-status-msg" });
@@ -71,11 +83,16 @@ export function episodeList(): {
     let currentCards: HTMLElement[] = [];
     let filterTimer: ReturnType<typeof setTimeout> | null = null;
     let isBatchSaving = false;
+    let selectedEpisodeIds = new Set<string>();
 
     function ticksToMinutes(ticks: number | null): string {
         if (!ticks) return "";
         const minutes = Math.round(ticks / 10_000_000 / 60);
         return minutes + "\u00A0min";
+    }
+
+    function getSelectedEpisodeIds(): string[] {
+        return currentEpisodes.filter((episode) => selectedEpisodeIds.has(episode.Id)).map((episode) => episode.Id);
     }
 
     function cloneTimestampResult(result: ApiResult<TimestampMap> | null): ApiResult<TimestampMap> | null {
@@ -94,7 +111,11 @@ export function episodeList(): {
     }
 
     function syncBulkButtonState(): void {
-        bulkDurationButton.disabled = isBatchSaving || currentEpisodes.length === 0;
+        const selectedCount = getSelectedEpisodeIds().length;
+        bulkDurationButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
+        selectAllButton.disabled =
+            isBatchSaving || currentEpisodes.length === 0 || selectedCount === currentEpisodes.length;
+        invertSelectionButton.disabled = isBatchSaving || currentEpisodes.length === 0;
     }
 
     function setStatusMessage(msg: string, color = "var(--is-text-muted)"): void {
@@ -142,6 +163,29 @@ export function episodeList(): {
         index: number,
     ): HTMLElement {
         const card = el("div", { className: "ts-episode-card" });
+        const selectCol = el("div", { className: "ts-episode-select" });
+        const selectInput = el("input", {
+            className: "ts-episode-select-input",
+            type: "checkbox",
+        }) as HTMLInputElement;
+        selectInput.checked = selectedEpisodeIds.has(ep.Id);
+        selectInput.disabled = isBatchSaving;
+        selectInput.setAttribute("aria-label", "Select " + ep.Name + " for bulk updates");
+        selectCol.append(selectInput);
+        card.append(selectCol);
+        card.classList.toggle("unselected", !selectInput.checked);
+
+        selectInput.addEventListener("change", () => {
+            if (selectInput.checked) {
+                selectedEpisodeIds.add(ep.Id);
+            } else {
+                selectedEpisodeIds.delete(ep.Id);
+            }
+
+            card.classList.toggle("unselected", !selectInput.checked);
+            applyFilter();
+            syncBulkButtonState();
+        });
 
         const img = el("img", {
             className: "ts-episode-thumb",
@@ -314,11 +358,27 @@ export function episodeList(): {
         return row;
     }
 
-    async function applyBulkDuration(modeKey: string, duration: number, target: "end" | "start" = "end"): Promise<boolean> {
+    async function applyBulkDuration(
+        modeKey: string,
+        duration: number,
+        target: "end" | "start" = "end",
+        selectedEpisodeIds?: string[],
+    ): Promise<boolean> {
         const modeLabel = TIMESTAMP_MODES.find((mode) => mode.key === modeKey)?.label ?? modeKey;
+        const selectedIdSet = new Set(selectedEpisodeIds ?? getSelectedEpisodeIds());
+        const selectedCount = selectedIdSet.size;
+
+        if (selectedCount === 0) {
+            setStatusMessage("No episodes selected for bulk update.", "var(--is-warning)");
+            return false;
+        }
 
         const eligible = currentEpisodes
             .map((episode, index) => {
+                if (!selectedIdSet.has(episode.Id)) {
+                    return null;
+                }
+
                 const result = currentTimestamps[index];
                 const segment = result?.ok === true ? result.data?.[modeKey] : undefined;
                 if (!result?.ok || !segment || (segment.Start === 0 && segment.End === 0)) {
@@ -339,7 +399,7 @@ export function episodeList(): {
 
         if (eligible.length === 0) {
             setStatusMessage(
-                "No " + modeLabel + " timestamps were found in the current list.",
+                "No " + modeLabel + " timestamps were found in the selected episodes.",
                 "var(--is-warning)",
             );
             return false;
@@ -361,7 +421,7 @@ export function episodeList(): {
                     "var(--is-text-muted)",
                 );
 
-                let response;
+                let response: Response;
                 if (target === "end") {
                     const end = entry.segment.Start + duration;
                     response = await api.updateEpisodeTimestamp(entry.episode.Id, {
@@ -427,7 +487,8 @@ export function episodeList(): {
 
         rebuildList(true);
 
-        const skipped = currentEpisodes.length - eligible.length;
+        const skipped = selectedCount - eligible.length;
+        const unselected = currentEpisodes.length - selectedCount;
         const summary =
             "Updated " +
             String(updated) +
@@ -435,6 +496,7 @@ export function episodeList(): {
             modeLabel +
             " timestamps, skipped " +
             String(skipped) +
+            (unselected > 0 ? ", left " + String(unselected) + " unselected" : "") +
             (failed > 0 ? ", failed " + String(failed) : "") +
             ".";
 
@@ -462,12 +524,17 @@ export function episodeList(): {
             },
         });
 
-        const bulkRequest = pendingRequest as unknown as BulkDurationRequest;
+        const bulkRequest = pendingRequest as BulkDurationRequest | null;
         if (!bulkRequest) {
             return;
         }
 
-        await applyBulkDuration(bulkRequest.modeKey, bulkRequest.duration, bulkRequest.target ?? "end");
+        await applyBulkDuration(
+            bulkRequest.modeKey,
+            bulkRequest.duration,
+            bulkRequest.target ?? "end",
+            getSelectedEpisodeIds(),
+        );
     }
 
     function applyFilter(): void {
@@ -480,12 +547,17 @@ export function episodeList(): {
             if (visible) visibleCount++;
         });
 
+        const totalCount = currentEpisodes.length;
+        const selectedCount = getSelectedEpisodeIds().length;
         if (query && visibleCount === 0) {
-            countEl.textContent = "No matching episodes";
+            countEl.textContent = "No matching episodes · " + String(selectedCount) + " selected";
             return;
         }
 
-        countEl.textContent = visibleCount + " episode" + (visibleCount !== 1 ? "s" : "");
+        const countText = query
+            ? String(visibleCount) + " of " + String(totalCount) + " episodes"
+            : String(visibleCount) + " episode" + (visibleCount !== 1 ? "s" : "");
+        countEl.textContent = countText + " · " + String(selectedCount) + " selected";
     }
 
     const handleFilterInput = () => {
@@ -496,6 +568,18 @@ export function episodeList(): {
     };
 
     filterInput.addEventListener("input", handleFilterInput);
+    const handleSelectAllButtonClick = () => {
+        selectedEpisodeIds = new Set(currentEpisodes.map((episode) => episode.Id));
+        rebuildList(true);
+    };
+    selectAllButton.addEventListener("click", handleSelectAllButtonClick);
+    const handleInvertSelectionButtonClick = () => {
+        selectedEpisodeIds = new Set(
+            currentEpisodes.filter((episode) => !selectedEpisodeIds.has(episode.Id)).map((episode) => episode.Id),
+        );
+        rebuildList(true);
+    };
+    invertSelectionButton.addEventListener("click", handleInvertSelectionButtonClick);
     const handleBulkDurationButtonClick = () => {
         void handleBulkDurationClick().catch(console.error);
     };
@@ -516,6 +600,7 @@ export function episodeList(): {
             // for callers that hold the same array (like the action bar).
             externalTimestampsRef = timestamps;
             currentTimestamps = timestamps.map((result) => cloneTimestampResult(result));
+            selectedEpisodeIds = new Set(episodes.map((episode) => episode.Id));
             if (filterTimer) clearTimeout(filterTimer);
             filterInput.value = "";
             listEl.replaceChildren();
@@ -539,6 +624,7 @@ export function episodeList(): {
             currentEpisodes = [];
             currentTimestamps = [];
             externalTimestampsRef = null;
+            selectedEpisodeIds = new Set();
             if (filterTimer) clearTimeout(filterTimer);
             countEl.textContent = "";
             filterInput.value = "";
@@ -556,6 +642,8 @@ export function episodeList(): {
                 filterTimer = null;
             }
             filterInput.removeEventListener("input", handleFilterInput);
+            selectAllButton.removeEventListener("click", handleSelectAllButtonClick);
+            invertSelectionButton.removeEventListener("click", handleInvertSelectionButtonClick);
             bulkDurationButton.removeEventListener("click", handleBulkDurationButtonClick);
         },
     };

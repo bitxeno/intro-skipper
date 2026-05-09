@@ -42,7 +42,7 @@ export function timestampBulkEditDialog(opts: TimestampBulkEditDialogOptions): P
         const body = el(
             "p",
             { id: bodyId, className: "is-confirm-body" },
-            "Apply one duration to every loaded episode that already has the selected timestamp type.",
+            "Apply one duration to the selected episodes in the current list that already have the chosen timestamp type.",
         );
 
         const modeLabel = el(
@@ -104,7 +104,7 @@ export function timestampBulkEditDialog(opts: TimestampBulkEditDialogOptions): P
         const helper = el(
             "div",
             { className: "field-description" },
-            "Saving adjusts each matching episode's end time to start + duration.",
+            "Saving adjusts each matching episode's end time to start + duration. Episodes without the chosen timestamp type are skipped.",
         );
 
         const errorEl = el("div", { className: "field-error" });
