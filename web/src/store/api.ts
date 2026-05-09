@@ -3,10 +3,12 @@ import type {
     ApiResult,
     TimestampMap,
     AnalyzerActions,
+    ChromaprintVisualizationComparison,
     ScanStatus,
     PluginInfo,
     LibraryStorage,
     SystemStorageInfo,
+    VisualizerMode,
 } from "../types.ts";
 
 const PLUGIN_ID = "c83d86bb-a1e0-4c35-a113-e2101cf4ee6b";
@@ -130,6 +132,17 @@ export function scanSeason(showId: string, seasonId: string): Promise<Response> 
 
 export function getScanStatus(): Promise<ApiResult<ScanStatus>> {
     return getJson<ScanStatus>("Intros/ScanStatus");
+}
+
+export function getChromaprintComparison(
+    leftEpisodeId: string,
+    rightEpisodeId: string,
+    mode: VisualizerMode,
+): Promise<ApiResult<ChromaprintVisualizationComparison>> {
+    const params = new URLSearchParams({ mode });
+    return getJson<ChromaprintVisualizationComparison>(
+        `Intros/Chromaprint/Compare/${encodeURIComponent(leftEpisodeId)}/${encodeURIComponent(rightEpisodeId)}?${params.toString()}`,
+    );
 }
 
 // Timestamp deletion.

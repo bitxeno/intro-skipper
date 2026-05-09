@@ -6,6 +6,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Net.Mime;
+using IntroSkipper.Analyzers;
+using IntroSkipper.Configuration;
 using IntroSkipper.Data;
 using IntroSkipper.Manager;
 using IntroSkipper.ScheduledTasks;
@@ -89,6 +91,81 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
         }
 
         return episodes.Select(e => new EpisodeVisualization(e.EpisodeId, e.Name)).ToList();
+    }
+
+    /// <summary>
+    /// Returns raw chromaprint data for two episodes so the dashboard can visualize their similarity.
+    /// </summary>
+    /// <param name="leftEpisodeId">Left-hand episode id.</param>
+    /// <param name="rightEpisodeId">Right-hand episode id.</param>
+    /// <param name="mode">Fingerprint mode.</param>
+    /// <returns>Chromaprint visualization payload.</returns>
+    [HttpGet("Chromaprint/Compare/{LeftEpisodeId}/{RightEpisodeId}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public ActionResult<ChromaprintVisualizationComparison> GetChromaprintComparison(
+        [FromRoute] Guid leftEpisodeId,
+        [FromRoute] Guid rightEpisodeId,
+        [FromQuery] AnalysisMode mode = AnalysisMode.Introduction)
+    {
+        if (mode is not (AnalysisMode.Introduction or AnalysisMode.Credits))
+        {
+            return BadRequest("Chromaprint visualization only supports Introduction and Credits mode.");
+        }
+
+        var leftEpisode = ResolveEpisodeForChromaprint(leftEpisodeId);
+        var rightEpisode = ResolveEpisodeForChromaprint(rightEpisodeId);
+        if (leftEpisode is null || rightEpisode is null)
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            var leftFingerprint = FFmpegWrapper.Fingerprint(leftEpisode, mode);
+            var rightFingerprint = FFmpegWrapper.Fingerprint(rightEpisode, mode);
+            var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+            var analyzer = new ChromaprintAnalyzer(_loggerFactory.CreateLogger<ChromaprintAnalyzer>());
+            var timeAdjustmentHelper = new TimeAdjustmentHelper(_loggerFactory.CreateLogger<TimeAdjustmentHelper>(), config, mode);
+            var (likelyLeftIntro, likelyRightIntro) = analyzer.CompareEpisodes(
+                leftEpisode.EpisodeId,
+                leftFingerprint,
+                rightEpisode.EpisodeId,
+                rightFingerprint);
+
+            if (mode == AnalysisMode.Credits)
+            {
+                OffsetVisualizationSegmentForCredits(likelyLeftIntro, leftEpisode);
+                OffsetVisualizationSegmentForCredits(likelyRightIntro, rightEpisode);
+            }
+
+            var adjustedLeftIntro = AdjustVisualizationSegment(likelyLeftIntro, leftEpisode, timeAdjustmentHelper);
+            var adjustedRightIntro = AdjustVisualizationSegment(likelyRightIntro, rightEpisode, timeAdjustmentHelper);
+
+            return new ChromaprintVisualizationComparison(
+                mode.ToString(),
+                ChromaprintConstants.SampleDuration,
+                100 - ((config.MaximumFingerprintPointDifferences * 100.0) / 32.0),
+                config.MaximumTimeSkip,
+                mode == AnalysisMode.Introduction ? config.MinimumIntroDuration : config.MinimumCreditsDuration,
+                ChromaprintAnalyzer.GetSuggestedOffsets(leftFingerprint, rightFingerprint),
+                adjustedLeftIntro,
+                adjustedRightIntro,
+                CreateVisualizationEpisode(leftEpisode, leftFingerprint, mode),
+                CreateVisualizationEpisode(rightEpisode, rightFingerprint, mode));
+        }
+        catch (FingerprintException ex)
+        {
+            LogChromaprintVisualizationFailed(_logger, ex, leftEpisodeId, rightEpisodeId);
+            return Problem("Unable to compute chromaprint data for the selected episodes.", statusCode: StatusCodes.Status500InternalServerError);
+        }
+        catch (Exception ex)
+        {
+            LogChromaprintVisualizationFailed(_logger, ex, leftEpisodeId, rightEpisodeId);
+            return Problem("Unable to build adjusted Chromaprint intro data for the selected episodes.", statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 
     /// <summary>
@@ -207,6 +284,99 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
             .ToList();
     }
 
+    private QueuedEpisode? ResolveEpisodeForChromaprint(Guid episodeId)
+    {
+        if (Plugin.Instance?.GetItem(episodeId) is not Episode episode || string.IsNullOrEmpty(episode.Path))
+        {
+            return null;
+        }
+
+        var plugin = Plugin.Instance;
+        if (plugin is null)
+        {
+            return null;
+        }
+
+        var duration = TimeSpan.FromTicks(episode.RunTimeTicks ?? 0).TotalSeconds;
+        if (duration <= 0)
+        {
+            duration = FFmpegWrapper.ProbeDuration(new QueuedEpisode
+            {
+                EpisodeId = episode.Id,
+                Path = episode.Path,
+                ShortcutPath = episode.ShortcutPath,
+                IsShortcut = episode.IsShortcut,
+            });
+        }
+
+        var analysisPercent = Convert.ToDouble(plugin.Configuration.AnalysisPercent) / 100;
+        var fingerprintDuration = Math.Min(
+            duration >= 5 * 60 ? duration * analysisPercent : duration,
+            60 * plugin.Configuration.AnalysisLengthLimit);
+
+        var maxCreditsDuration = Math.Min(
+            duration >= 5 * 60 ? duration * analysisPercent : duration,
+            60 * plugin.Configuration.MaximumCreditsDuration);
+
+        return new QueuedEpisode
+        {
+            SeriesName = episode.SeriesName ?? string.Empty,
+            SeasonNumber = episode.AiredSeasonNumber ?? 0,
+            EpisodeNumber = episode.IndexNumber ?? 0,
+            EpisodeId = episode.Id,
+            SeasonId = episode.SeasonId,
+            SeriesId = episode.SeriesId,
+            Path = episode.Path,
+            ShortcutPath = episode.ShortcutPath,
+            Name = episode.Name ?? string.Empty,
+            Category = QueuedMediaCategory.Episode,
+            IsShortcut = episode.IsShortcut,
+            Duration = duration,
+            IntroFingerprintEnd = fingerprintDuration,
+            CreditsFingerprintStart = Math.Max(0, duration - maxCreditsDuration),
+        };
+    }
+
+    private static ChromaprintVisualizationEpisode CreateVisualizationEpisode(
+        QueuedEpisode episode,
+        uint[] fingerprint,
+        AnalysisMode mode)
+    {
+        var fingerprintStart = mode == AnalysisMode.Credits ? episode.CreditsFingerprintStart : 0;
+        var fingerprintEnd = mode == AnalysisMode.Credits ? episode.Duration : episode.IntroFingerprintEnd;
+
+        return new ChromaprintVisualizationEpisode(
+            episode.EpisodeId,
+            episode.Name,
+            episode.EpisodeNumber,
+            episode.Duration,
+            fingerprintStart,
+            fingerprintEnd,
+            fingerprint);
+    }
+
+    private static void OffsetVisualizationSegmentForCredits(Segment intro, QueuedEpisode episode)
+    {
+        if (!intro.Valid)
+        {
+            return;
+        }
+
+        intro.Start += episode.CreditsFingerprintStart;
+        intro.End += episode.CreditsFingerprintStart;
+    }
+
+    private static Segment? AdjustVisualizationSegment(Segment intro, QueuedEpisode episode, TimeAdjustmentHelper timeAdjustmentHelper)
+    {
+        if (!intro.Valid)
+        {
+            return null;
+        }
+
+        var adjustedIntro = timeAdjustmentHelper.AdjustIntroTimes(episode, new Segment(intro));
+        return adjustedIntro.Valid ? adjustedIntro : null;
+    }
+
     /// <summary>
     /// Updates the analyzer actions for the provided season.
     /// </summary>
@@ -304,6 +474,9 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Start (Re-) scan of season/movie {SeasonId}")]
     private static partial void LogStartRescan(ILogger logger, Guid seasonId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to build chromaprint visualization payload for {LeftEpisodeId} and {RightEpisodeId}")]
+    private static partial void LogChromaprintVisualizationFailed(ILogger logger, Exception ex, Guid leftEpisodeId, Guid rightEpisodeId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Manual season rescan for {SeasonId} was canceled.")]
     private static partial void LogRescanCanceled(ILogger logger, Guid seasonId);

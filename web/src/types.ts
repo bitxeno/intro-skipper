@@ -94,6 +94,38 @@ export type ScanStatus = {
     isRunning: boolean;
 };
 
+export type VisualizerMode = "Introduction" | "Credits";
+
+export type ChromaprintVisualizationEpisode = {
+    Id: string;
+    Name: string;
+    EpisodeNumber: number;
+    Duration: number;
+    FingerprintStartSeconds: number;
+    FingerprintEndSeconds: number;
+    Fingerprint: number[];
+};
+
+export type ChromaprintSegment = {
+    EpisodeId: string;
+    Start: number;
+    End: number;
+    Valid: boolean;
+};
+
+export type ChromaprintVisualizationComparison = {
+    Mode: VisualizerMode;
+    SampleDuration: number;
+    SimilarityThresholdPercent: number;
+    MaximumTimeSkip: number;
+    MinimumMatchDuration: number;
+    SuggestedOffsets: number[];
+    LikelyLeftIntro: ChromaprintSegment | null;
+    LikelyRightIntro: ChromaprintSegment | null;
+    LeftEpisode: ChromaprintVisualizationEpisode;
+    RightEpisode: ChromaprintVisualizationEpisode;
+};
+
 export type PluginInfo = {
     Id: string;
     Status: string;

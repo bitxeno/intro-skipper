@@ -176,6 +176,17 @@ public class TestAudioFingerprinting
             });
     }
 
+    [Fact]
+    public void TestSuggestedOffsetsUseSortedUniqueExactMatches()
+    {
+        var lhsFingerprint = new uint[] { 10, 20, 30, 20, 40 };
+        var rhsFingerprint = new uint[] { 5, 20, 30, 99, 20, 77 };
+
+        var offsets = ChromaprintAnalyzer.GetSuggestedOffsets(lhsFingerprint, rhsFingerprint);
+
+        Assert.Equal([-2, 0], offsets);
+    }
+
     /// <summary>
     /// Test that the silencedetect wrapper is working.
     /// </summary>

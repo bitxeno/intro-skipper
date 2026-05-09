@@ -208,6 +208,31 @@ public partial class ChromaprintAnalyzer(ILogger<ChromaprintAnalyzer> logger) : 
         }
     }
 
+    internal static IReadOnlyList<int> GetSuggestedOffsets(uint[] lhsPoints, uint[] rhsPoints, int limit = 20)
+    {
+        if (limit <= 0 || lhsPoints.Length == 0 || rhsPoints.Length == 0)
+        {
+            return [];
+        }
+
+        var rhsFirstIndexes = new Dictionary<uint, int>();
+        for (var i = 0; i < rhsPoints.Length; i++)
+        {
+            rhsFirstIndexes.TryAdd(rhsPoints[i], i);
+        }
+
+        var shifts = new HashSet<int>();
+        for (var i = 0; i < lhsPoints.Length; i++)
+        {
+            if (rhsFirstIndexes.TryGetValue(lhsPoints[i], out var rhsIndex))
+            {
+                shifts.Add(rhsIndex - i);
+            }
+        }
+
+        return [.. shifts.Order().Take(limit)];
+    }
+
     private int GetMaximumIntroDuration(QueuedEpisode episode)
     {
         return _analysisMode == AnalysisMode.Introduction
