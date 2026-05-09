@@ -9,7 +9,9 @@ export type TimestampBulkEditDialogOptions = {
     title: string;
     modes: ReadonlyArray<TimestampModeOption>;
     defaultModeKey?: string;
-    onSave: (values: { modeKey: string; duration: number }) => Promise<boolean>;
+    /** Default target when saving: 'end' or 'start' */
+    defaultTarget?: "end" | "start";
+    onSave: (values: { modeKey: string; duration: number; target: "end" | "start" }) => Promise<boolean>;
 };
 
 let dialogCounter = 0;
@@ -30,6 +32,7 @@ export function timestampBulkEditDialog(opts: TimestampBulkEditDialogOptions): P
         const bodyId = "is-timestamp-bulk-body-" + uid;
         const modeId = "is-timestamp-bulk-mode-" + uid;
         const durationId = "is-timestamp-bulk-duration-" + uid;
+        const targetId = "is-timestamp-bulk-target-" + uid;
 
         const dialog = el("dialog", { className: "is-confirm-dialog" });
         dialog.setAttribute("aria-labelledby", titleId);
@@ -60,6 +63,24 @@ export function timestampBulkEditDialog(opts: TimestampBulkEditDialogOptions): P
 
         const modeRow = el("div", { className: "is-confirm-input-row" });
         modeRow.append(modeLabel, modeSelect);
+
+        const targetLabel = el(
+            "label",
+            { className: "is-confirm-input-label", for: targetId },
+            "Apply to",
+        );
+        const targetSelect = el("select", {
+            id: targetId,
+            className: "is-confirm-input",
+        }) as HTMLSelectElement;
+        targetSelect.append(el("option", { value: "end" }, "End time"));
+        targetSelect.append(el("option", { value: "start" }, "Start time"));
+        if (opts.defaultTarget) {
+            targetSelect.value = opts.defaultTarget;
+        }
+
+        const targetRow = el("div", { className: "is-confirm-input-row" });
+        targetRow.append(targetLabel, targetSelect);
 
         const durationLabel = el(
             "label",
@@ -103,7 +124,7 @@ export function timestampBulkEditDialog(opts: TimestampBulkEditDialogOptions): P
         const actions = el("div", { className: "is-confirm-actions" });
         actions.append(cancelBtn, saveBtn);
 
-        dialog.append(heading, body, modeRow, durationRow, helper, errorEl, actions);
+        dialog.append(heading, body, modeRow, targetRow, durationRow, helper, errorEl, actions);
 
         let isSaving = false;
 
@@ -129,6 +150,7 @@ export function timestampBulkEditDialog(opts: TimestampBulkEditDialogOptions): P
         function setSaving(value: boolean): void {
             isSaving = value;
             modeSelect.disabled = value;
+            targetSelect.disabled = value;
             durationInput.disabled = value;
             cancelBtn.disabled = value;
             saveBtn.textContent = value ? "Saving…" : "Save";
@@ -152,7 +174,8 @@ export function timestampBulkEditDialog(opts: TimestampBulkEditDialogOptions): P
             setError("");
 
             try {
-                const saved = await opts.onSave({ modeKey: modeSelect.value, duration });
+                const target = targetSelect.value === "start" ? "start" : "end";
+                const saved = await opts.onSave({ modeKey: modeSelect.value, duration, target });
                 if (saved) {
                     cleanup();
                     return;

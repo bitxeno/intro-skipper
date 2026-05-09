@@ -20,6 +20,7 @@ const TIMESTAMP_MODES: ReadonlyArray<{ key: string; label: string }> = [
 type BulkDurationRequest = {
     modeKey: string;
     duration: number;
+    target?: "end" | "start";
 };
 
 export function episodeList(): {
@@ -313,7 +314,7 @@ export function episodeList(): {
         return row;
     }
 
-    async function applyBulkDuration(modeKey: string, duration: number): Promise<boolean> {
+    async function applyBulkDuration(modeKey: string, duration: number, target: "end" | "start" = "end"): Promise<boolean> {
         const modeLabel = TIMESTAMP_MODES.find((mode) => mode.key === modeKey)?.label ?? modeKey;
 
         const eligible = currentEpisodes
@@ -343,6 +344,7 @@ export function episodeList(): {
             );
             return false;
         }
+        // When applying to start, negative start times will be clamped to 0.
 
         isBatchSaving = true;
         syncBulkButtonState();
@@ -359,31 +361,62 @@ export function episodeList(): {
                     "var(--is-text-muted)",
                 );
 
-                const end = entry.segment.Start + duration;
-                const response = await api.updateEpisodeTimestamp(entry.episode.Id, {
-                    mode: modeKey,
-                    currentStart: entry.segment.Start,
-                    currentEnd: entry.segment.End,
-                    start: entry.segment.Start,
-                    end,
-                });
+                let response;
+                if (target === "end") {
+                    const end = entry.segment.Start + duration;
+                    response = await api.updateEpisodeTimestamp(entry.episode.Id, {
+                        mode: modeKey,
+                        currentStart: entry.segment.Start,
+                        currentEnd: entry.segment.End,
+                        start: entry.segment.Start,
+                        end,
+                    });
 
-                if (response.ok) {
-                    updated += 1;
-                    const currentResult = currentTimestamps[entry.index];
-                    const nextMap = {
-                        ...(currentResult?.ok === true ? currentResult.data ?? {} : {}),
-                        [modeKey]: { Start: entry.segment.Start, End: end },
-                    };
-                    const updatedResult = { ok: true, status: response.status, data: nextMap };
-                    currentTimestamps[entry.index] = updatedResult;
-                    if (externalTimestampsRef) {
-                        externalTimestampsRef[entry.index] = updatedResult;
+                    if (response.ok) {
+                        updated += 1;
+                        const currentResult = currentTimestamps[entry.index];
+                        const nextMap = {
+                            ...(currentResult?.ok === true ? currentResult.data ?? {} : {}),
+                            [modeKey]: { Start: entry.segment.Start, End: end },
+                        };
+                        const updatedResult = { ok: true, status: response.status, data: nextMap };
+                        currentTimestamps[entry.index] = updatedResult;
+                        if (externalTimestampsRef) {
+                            externalTimestampsRef[entry.index] = updatedResult;
+                        }
+                    } else {
+                        failed += 1;
+                        if (!firstError) {
+                            firstError = entry.episode.Name + " (HTTP " + response.status + ")";
+                        }
                     }
                 } else {
-                    failed += 1;
-                    if (!firstError) {
-                        firstError = entry.episode.Name + " (HTTP " + response.status + ")";
+                    const start = Math.max(0, entry.segment.End - duration);
+                    response = await api.updateEpisodeTimestamp(entry.episode.Id, {
+                        mode: modeKey,
+                        currentStart: entry.segment.Start,
+                        currentEnd: entry.segment.End,
+                        start,
+                        end: entry.segment.End,
+                    });
+
+                    if (response.ok) {
+                        updated += 1;
+                        const currentResult = currentTimestamps[entry.index];
+                        const nextMap = {
+                            ...(currentResult?.ok === true ? currentResult.data ?? {} : {}),
+                            [modeKey]: { Start: start, End: entry.segment.End },
+                        };
+                        const updatedResult = { ok: true, status: response.status, data: nextMap };
+                        currentTimestamps[entry.index] = updatedResult;
+                        if (externalTimestampsRef) {
+                            externalTimestampsRef[entry.index] = updatedResult;
+                        }
+                    } else {
+                        failed += 1;
+                        if (!firstError) {
+                            firstError = entry.episode.Name + " (HTTP " + response.status + ")";
+                        }
                     }
                 }
             }
@@ -434,7 +467,7 @@ export function episodeList(): {
             return;
         }
 
-        await applyBulkDuration(bulkRequest.modeKey, bulkRequest.duration);
+        await applyBulkDuration(bulkRequest.modeKey, bulkRequest.duration, bulkRequest.target ?? "end");
     }
 
     function applyFilter(): void {
