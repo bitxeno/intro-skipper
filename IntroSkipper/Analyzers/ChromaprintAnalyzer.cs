@@ -80,55 +80,48 @@ public partial class ChromaprintAnalyzer(ILogger<ChromaprintAnalyzer> logger) : 
             }
         }
 
-        // Use the second non-movie episode as the comparison reference (if present)
-        var secondEpisode = analysisQueue.Where(e => e.Category != QueuedMediaCategory.Movie).Skip(1).FirstOrDefault();
-        if (secondEpisode is not null)
+        // Compare each episode against the previous non-movie episode in queue order.
+        foreach (var (episode, previousEpisode) in GetEpisodeComparisonsWithPrevious(analysisQueue, episodeAnalysisQueue))
         {
-            if (!fingerprintCache.TryGetValue(secondEpisode.EpisodeId, out var secondEpisodeFingerprint))
+            if (!fingerprintCache.TryGetValue(previousEpisode.EpisodeId, out var previousEpisodeFingerprint))
             {
                 try
                 {
-                    _logger.LogInformation("Computing fingerprint for second episode {Name} ({Id})", secondEpisode.Name, secondEpisode.EpisodeId);
-                    secondEpisodeFingerprint = FFmpegWrapper.Fingerprint(secondEpisode, mode);
+                    _logger.LogInformation("Computing fingerprint for previous episode {Name} ({Id})", previousEpisode.Name, previousEpisode.EpisodeId);
+                    previousEpisodeFingerprint = FFmpegWrapper.Fingerprint(previousEpisode, mode);
                 }
                 catch (FingerprintException ex)
                 {
                     LogCaughtFingerprintError(ex);
                     WarningManager.SetFlag(PluginWarning.InvalidChromaprintFingerprint);
 
-                    secondEpisodeFingerprint = [];
+                    previousEpisodeFingerprint = [];
                 }
 
-                fingerprintCache[secondEpisode.EpisodeId] = secondEpisodeFingerprint;
+                fingerprintCache[previousEpisode.EpisodeId] = previousEpisodeFingerprint;
             }
 
-            if (secondEpisodeFingerprint.Length > 0)
+            if (previousEpisodeFingerprint.Length == 0)
             {
-                foreach (var episode in episodeAnalysisQueue)
-                {
-                    if (episode.EpisodeId == secondEpisode.EpisodeId)
-                    {
-                        continue;
-                    }
+                continue;
+            }
 
-                    var (episodeIntro, secondEpisodeIntro) = CompareEpisodes(
-                        episode.EpisodeId,
-                        fingerprintCache[episode.EpisodeId],
-                        secondEpisode.EpisodeId,
-                        secondEpisodeFingerprint);
+            var (episodeIntro, previousEpisodeIntro) = CompareEpisodes(
+                episode.EpisodeId,
+                fingerprintCache[episode.EpisodeId],
+                previousEpisode.EpisodeId,
+                previousEpisodeFingerprint);
 
-                    if (episodeIntro.Valid && episodeIntro.Duration <= GetMaximumIntroDuration(episode))
-                    {
-                        OffsetIntroForCredits(episodeIntro, episode);
-                        StoreIntroIfLonger(seasonIntros, episodeIntro);
-                    }
+            if (episodeIntro.Valid && episodeIntro.Duration <= GetMaximumIntroDuration(episode))
+            {
+                OffsetIntroForCredits(episodeIntro, episode);
+                StoreIntroIfLonger(seasonIntros, episodeIntro);
+            }
 
-                    if (secondEpisodeIntro.Valid && secondEpisodeIntro.Duration <= GetMaximumIntroDuration(secondEpisode))
-                    {
-                        OffsetIntroForCredits(secondEpisodeIntro, secondEpisode);
-                        StoreIntroIfLonger(seasonIntros, secondEpisodeIntro);
-                    }
-                }
+            if (previousEpisodeIntro.Valid && previousEpisodeIntro.Duration <= GetMaximumIntroDuration(previousEpisode))
+            {
+                OffsetIntroForCredits(previousEpisodeIntro, previousEpisode);
+                StoreIntroIfLonger(seasonIntros, previousEpisodeIntro);
             }
         }
 
@@ -195,6 +188,24 @@ public partial class ChromaprintAnalyzer(ILogger<ChromaprintAnalyzer> logger) : 
         }
 
         return analysisQueue;
+    }
+
+    internal static IEnumerable<(QueuedEpisode CurrentEpisode, QueuedEpisode PreviousEpisode)> GetEpisodeComparisonsWithPrevious(
+        IReadOnlyList<QueuedEpisode> analysisQueue,
+        IEnumerable<QueuedEpisode> episodeAnalysisQueue)
+    {
+        var analyzedEpisodeIds = episodeAnalysisQueue.Select(episode => episode.EpisodeId).ToHashSet();
+        QueuedEpisode? previousEpisode = null;
+
+        foreach (var episode in analysisQueue.Where(episode => episode.Category != QueuedMediaCategory.Movie))
+        {
+            if (previousEpisode is not null && analyzedEpisodeIds.Contains(episode.EpisodeId))
+            {
+                yield return (episode, previousEpisode);
+            }
+
+            previousEpisode = episode;
+        }
     }
 
     private int GetMaximumIntroDuration(QueuedEpisode episode)

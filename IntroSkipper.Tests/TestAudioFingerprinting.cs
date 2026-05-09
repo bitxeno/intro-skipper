@@ -141,6 +141,41 @@ public class TestAudioFingerprinting
         Assert.Equal(15, intro!.Duration, 3);
     }
 
+    [Fact]
+    public void TestEpisodeComparisonsUsePreviousEpisode()
+    {
+        var firstEpisode = QueueEpisode("audio/big_buck_bunny_intro.mp3");
+        firstEpisode.EpisodeNumber = 1;
+
+        var movie = QueueEpisode("audio/big_buck_bunny_intro.mp3");
+        movie.EpisodeNumber = 2;
+        movie.Category = QueuedMediaCategory.Movie;
+
+        var secondEpisode = QueueEpisode("audio/big_buck_bunny_intro.mp3");
+        secondEpisode.EpisodeNumber = 3;
+
+        var thirdEpisode = QueueEpisode("audio/big_buck_bunny_intro.mp3");
+        thirdEpisode.EpisodeNumber = 4;
+
+        var comparisons = new List<(QueuedEpisode CurrentEpisode, QueuedEpisode PreviousEpisode)>(
+            ChromaprintAnalyzer.GetEpisodeComparisonsWithPrevious(
+                [firstEpisode, movie, secondEpisode, thirdEpisode],
+                [secondEpisode, thirdEpisode]));
+
+        Assert.Collection(
+            comparisons,
+            comparison =>
+            {
+                Assert.Equal(secondEpisode.EpisodeId, comparison.CurrentEpisode.EpisodeId);
+                Assert.Equal(firstEpisode.EpisodeId, comparison.PreviousEpisode.EpisodeId);
+            },
+            comparison =>
+            {
+                Assert.Equal(thirdEpisode.EpisodeId, comparison.CurrentEpisode.EpisodeId);
+                Assert.Equal(secondEpisode.EpisodeId, comparison.PreviousEpisode.EpisodeId);
+            });
+    }
+
     /// <summary>
     /// Test that the silencedetect wrapper is working.
     /// </summary>
