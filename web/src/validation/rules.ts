@@ -33,6 +33,7 @@ export function validRegex(): ValidationRule<string> {
 export const validationRules: Partial<Record<keyof PluginConfig, FieldValidationRule[]>> = {
     AnalysisPercent: [range(MINIMUM_ANALYSIS_PERCENT, MAXIMUM_ANALYSIS_PERCENT)],
     AnalysisLengthLimit: [minValue(1)],
+    MinimumAnalysisLength: [minValue(1)],
     MinimumIntroDuration: [minValue(1)],
     MaximumIntroDuration: [minValue(1)],
     MinimumCreditsDuration: [minValue(1)],
@@ -55,6 +56,7 @@ export const validationRules: Partial<Record<keyof PluginConfig, FieldValidation
 
 // Min/max field pairs that must stay ordered.
 export const CROSS_FIELD_PAIRS: Array<[keyof PluginConfig, keyof PluginConfig]> = [
+    ["MinimumAnalysisLength", "AnalysisLengthLimit"],
     ["MinimumIntroDuration", "MaximumIntroDuration"],
     ["MinimumCreditsDuration", "MaximumCreditsDuration"],
     ["MinimumRecapDuration", "MaximumRecapDuration"],

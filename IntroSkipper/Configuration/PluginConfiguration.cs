@@ -32,6 +32,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public const int DefaultAnalysisLengthLimit = 10;
 
     /// <summary>
+    /// Default minimum runtime (in minutes) to analyze for each item.
+    /// </summary>
+    public const int DefaultMinimumAnalysisLength = 6;
+
+    /// <summary>
     /// Default minimum length of similar audio that will be considered an introduction.
     /// </summary>
     public const int DefaultMinimumIntroDuration = 15;
@@ -172,6 +177,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the upper limit (in minutes) on the length of each episode's audio track that will be analyzed.
     /// </summary>
     public int AnalysisLengthLimit { get; set; } = DefaultAnalysisLengthLimit;
+
+    /// <summary>
+    /// Gets or sets the minimum runtime (in minutes) to analyze for each item.
+    /// </summary>
+    public int MinimumAnalysisLength { get; set; } = DefaultMinimumAnalysisLength;
 
     /// <summary>
     /// Gets or sets a value indicating whether to use the minimum and maximum duration for chapters.

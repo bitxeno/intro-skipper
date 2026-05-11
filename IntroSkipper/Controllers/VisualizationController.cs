@@ -310,13 +310,17 @@ public partial class VisualizationController(ILogger<VisualizationController> lo
         }
 
         var analysisPercent = Convert.ToDouble(plugin.Configuration.AnalysisPercent) / 100;
-        var fingerprintDuration = Math.Min(
-            duration >= 5 * 60 ? duration * analysisPercent : duration,
-            60 * plugin.Configuration.AnalysisLengthLimit);
+        var fingerprintDuration = global::IntroSkipper.Helper.AnalysisDurationHelper.CalculateAnalysisDurationSeconds(
+            duration,
+            analysisPercent,
+            plugin.Configuration.MinimumAnalysisLength,
+            plugin.Configuration.AnalysisLengthLimit);
 
-        var maxCreditsDuration = Math.Min(
-            duration >= 5 * 60 ? duration * analysisPercent : duration,
-            60 * plugin.Configuration.MaximumCreditsDuration);
+        var maxCreditsDuration = global::IntroSkipper.Helper.AnalysisDurationHelper.CalculateAnalysisDurationSeconds(
+            duration,
+            analysisPercent,
+            plugin.Configuration.MinimumAnalysisLength,
+            plugin.Configuration.MaximumCreditsDuration);
 
         return new QueuedEpisode
         {

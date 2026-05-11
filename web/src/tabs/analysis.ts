@@ -32,9 +32,9 @@ export const analysisTab: Tab = {
         const info = htmlEl(
             "div",
             { className: "field-description" },
-            "<p>The amount of each item's content that will be analyzed is determined using the percentage and maximum runtime. The minimum of (duration &times; percent, maximum runtime) is the amount that will be analyzed.</p>" +
-                "<p>If the percentage or maximum runtime settings are modified, the cached fingerprints and timestamps for each series, season, or movie you want to analyze with the modified settings <b>will have to be recreated</b>.</p>" +
-                "<p>Increasing either of the above settings will cause episode analysis to take much longer.</p>",
+            "<p>The amount of each item's content that will be analyzed is determined using the percentage, minimum runtime, and maximum runtime settings. The result is clamped against the item's actual duration, so short items are still analyzed in full.</p>" +
+                "<p>If the percentage, minimum runtime, or maximum runtime settings are modified, the cached fingerprints and timestamps for each series, season, or movie you want to analyze with the modified settings <b>will have to be recreated</b>.</p>" +
+                "<p>Increasing any of the above settings will cause episode analysis to take much longer.</p>",
         );
 
         const chaptersOff = () => configStore.get("FullLengthChapters") !== true;
@@ -63,6 +63,13 @@ export const analysisTab: Tab = {
                 max: MAXIMUM_ANALYSIS_PERCENT,
                 description:
                     "Analysis will be limited to this percentage of each item's runtime. For example, a value of 25 (the default) will limit analysis to the first quarter of each item.",
+            }),
+            numberField({
+                id: "MinimumAnalysisLength",
+                label: "Minimum runtime to analyze (in minutes)",
+                min: 1,
+                description:
+                    "Analysis will analyze at least this amount of each item's runtime when the item is long enough. For example, a value of 6 (the default) will raise longer items to at least 6 minutes of analysis.",
             }),
             numberField({
                 id: "AnalysisLengthLimit",

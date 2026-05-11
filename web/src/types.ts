@@ -4,6 +4,7 @@ export interface PluginConfig {
     MaxParallelism: number;
     AnalysisPercent: number;
     AnalysisLengthLimit: number;
+    MinimumAnalysisLength: number;
     MinimumIntroDuration: number;
     MaximumIntroDuration: number;
     MinimumCreditsDuration: number;

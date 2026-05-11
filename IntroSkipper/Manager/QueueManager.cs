@@ -7,7 +7,6 @@
 using System.Text.RegularExpressions;
 using IntroSkipper.Configuration;
 using IntroSkipper.Data;
-using IntroSkipper.Helper;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Extensions;
@@ -130,9 +129,15 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
         // If analysis settings have been changed from the default, log the modified settings.
         if (config.AnalysisLengthLimit != PluginConfiguration.DefaultAnalysisLengthLimit
             || config.AnalysisPercent != PluginConfiguration.DefaultAnalysisPercent
+            || config.MinimumAnalysisLength != PluginConfiguration.DefaultMinimumAnalysisLength
             || config.MinimumIntroDuration != PluginConfiguration.DefaultMinimumIntroDuration)
         {
-            LogAnalysisSettingsChanged(_logger, config.AnalysisPercent, config.AnalysisLengthLimit, config.MinimumIntroDuration);
+            LogAnalysisSettingsChanged(
+                _logger,
+                config.AnalysisPercent,
+                config.AnalysisLengthLimit,
+                config.MinimumAnalysisLength,
+                config.MinimumIntroDuration);
         }
     }
 
@@ -257,13 +262,17 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
         }
 
         var duration = TimeSpan.FromTicks(episode.RunTimeTicks ?? 0).TotalSeconds;
-        var fingerprintDuration = Math.Min(
-            duration >= 5 * 60 ? duration * _analysisPercent : duration,
-            60 * pluginInstance.Configuration.AnalysisLengthLimit);
+        var fingerprintDuration = global::IntroSkipper.Helper.AnalysisDurationHelper.CalculateAnalysisDurationSeconds(
+            duration,
+            _analysisPercent,
+            pluginInstance.Configuration.MinimumAnalysisLength,
+            pluginInstance.Configuration.AnalysisLengthLimit);
 
-        var maxCreditsDuration = Math.Min(
-            duration >= 5 * 60 ? duration * _analysisPercent : duration,
-            60 * pluginInstance.Configuration.MaximumCreditsDuration);
+        var maxCreditsDuration = global::IntroSkipper.Helper.AnalysisDurationHelper.CalculateAnalysisDurationSeconds(
+            duration,
+            _analysisPercent,
+            pluginInstance.Configuration.MinimumAnalysisLength,
+            pluginInstance.Configuration.MaximumCreditsDuration);
 
         // Queue the episode for analysis
         seasonEpisodes.Add(new QueuedEpisode
@@ -296,7 +305,7 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
         }
 
         if (pluginInstance.GetItem(episode.SeriesId) is Series series &&
-            SeriesHelper.IsAnime(series))
+            global::IntroSkipper.Helper.SeriesHelper.IsAnime(series))
         {
             return QueuedMediaCategory.AnimeEpisode;
         }
@@ -513,8 +522,8 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
     [LoggerMessage(Level = LogLevel.Information, Message = "Refreshed metadata for {Count} episodes with invalid SeasonIds")]
     private static partial void LogRefreshedMetadata(ILogger logger, int count);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Analysis settings have been changed to: {Percent}% / {Minutes}m and a minimum of {Minimum}s")]
-    private static partial void LogAnalysisSettingsChanged(ILogger logger, int percent, int minutes, int minimum);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Analysis settings have been changed to: {Percent}% / {Minutes}m, minimum analysis length {MinimumAnalysisMinutes}m, and a minimum intro duration of {MinimumIntroSeconds}s")]
+    private static partial void LogAnalysisSettingsChanged(ILogger logger, int percent, int minutes, int minimumAnalysisMinutes, int minimumIntroSeconds);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Constructing anonymous internal query")]
     private static partial void LogConstructingQuery(ILogger logger);

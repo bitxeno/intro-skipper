@@ -8,6 +8,7 @@ using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaSegments;
 using MediaBrowser.Model;
 using MediaBrowser.Model.MediaSegments;
@@ -19,6 +20,8 @@ namespace IntroSkipper.Providers
     /// </summary>
     public class SegmentProvider : IMediaSegmentProvider
     {
+        private readonly ILibraryManager _libraryManager;
+
         /// <summary>
         /// Mappings between AnalysisMode and MediaSegmentType.
         /// </summary>
@@ -31,6 +34,15 @@ namespace IntroSkipper.Providers
             [AnalysisMode.Commercial] = MediaSegmentType.Commercial
         };
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SegmentProvider"/> class.
+        /// </summary>
+        /// <param name="libraryManager">The library manager.</param>
+        public SegmentProvider(ILibraryManager libraryManager)
+        {
+            _libraryManager = libraryManager;
+        }
+
         /// <inheritdoc/>
         public string Name => Plugin.Instance!.Name;
 
@@ -39,6 +51,18 @@ namespace IntroSkipper.Providers
         {
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(Plugin.Instance);
+
+            var item = _libraryManager.GetItemById(request.ItemId);
+            if (item is null)
+            {
+                return Array.Empty<MediaSegmentDto>();
+            }
+
+            var libraryOptions = _libraryManager.GetLibraryOptions(item);
+            if (libraryOptions != null && libraryOptions.DisabledSubtitleFetchers.Contains(Plugin.Instance.Name))
+            {
+                return request.ExistingSegments.ToArray();
+            }
 
             var segments = new List<MediaSegmentDto>();
             var itemSegments = await Plugin.Instance.GetSegmentsAsync(request.ItemId, cancellationToken).ConfigureAwait(false);
