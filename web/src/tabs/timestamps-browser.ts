@@ -284,7 +284,7 @@ export function createTimestampsBrowser(container: HTMLElement): { destroy: () =
 
         nav$.showDashboardLoading();
         try {
-            const { episodes, timestamps } = await tsData.getEpisodesWithTimestamps(
+            const { episodes, timestamps, hasSegments } = await tsData.getEpisodesWithTimestamps(
                 show.Id,
                 season.Id,
             );
@@ -295,7 +295,7 @@ export function createTimestampsBrowser(container: HTMLElement): { destroy: () =
                 return;
             }
 
-            epList.render(episodes, timestamps);
+            epList.render(episodes, timestamps, false, hasSegments);
             await actions.loadForSeason({
                 show,
                 season,
@@ -336,10 +336,10 @@ export function createTimestampsBrowser(container: HTMLElement): { destroy: () =
                 SeriesName: null,
             };
 
-            const result = await tsData.getMovieTimestamps(show.Id);
+            const { timestamps: result, hasSegments } = await tsData.getMovieTimestamps(show.Id);
             if (!nav$.isCurrentPanel(panelToken)) return;
 
-            epList.render([movieEp], [result], true);
+            epList.render([movieEp], [result], true, [hasSegments]);
             await actions.loadForSeason({
                 show,
                 season: null,

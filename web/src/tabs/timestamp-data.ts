@@ -25,20 +25,44 @@ export async function getEpisodesWithTimestamps(
 ): Promise<{
     episodes: EpisodeItem[];
     timestamps: Array<ApiResult<TimestampMap> | null>;
+    hasSegments: boolean[];
 }> {
     const episodes = await jellyfinClient.getEpisodes(showId, seasonId);
 
     if (episodes.length === 0) {
-        return { episodes: [], timestamps: [] };
+        return { episodes: [], timestamps: [], hasSegments: [] };
     }
 
-    const timestamps = await mapWithConcurrency(episodes, TIMESTAMP_FETCH_CONCURRENCY, (ep) =>
-        api.getEpisodeTimestamps(ep.Id),
-    );
+    const rows = await mapWithConcurrency(episodes, TIMESTAMP_FETCH_CONCURRENCY, async (ep) => {
+        const [timestamps, hasSegments] = await Promise.all([
+            api.getEpisodeTimestamps(ep.Id),
+            api.getEpisodeHasSegments(ep.Id),
+        ]);
 
-    return { episodes, timestamps };
+        return {
+            timestamps,
+            hasSegments: hasSegments.ok && hasSegments.data === true,
+        };
+    });
+
+    return {
+        episodes,
+        timestamps: rows.map((row) => row.timestamps),
+        hasSegments: rows.map((row) => row.hasSegments),
+    };
 }
 
-export async function getMovieTimestamps(showId: string): Promise<ApiResult<TimestampMap>> {
-    return api.getEpisodeTimestamps(showId);
+export async function getMovieTimestamps(showId: string): Promise<{
+    timestamps: ApiResult<TimestampMap>;
+    hasSegments: boolean;
+}> {
+    const [timestamps, hasSegments] = await Promise.all([
+        api.getEpisodeTimestamps(showId),
+        api.getEpisodeHasSegments(showId),
+    ]);
+
+    return {
+        timestamps,
+        hasSegments: hasSegments.ok && hasSegments.data === true,
+    };
 }

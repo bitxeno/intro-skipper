@@ -617,6 +617,19 @@ a {
     font-variant-numeric: tabular-nums;
 }
 
+.ts-episode-segment-badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(76, 175, 80, 0.14);
+    color: var(--is-success);
+    font-size: 0.72em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .ts-episode-timestamps {
     display: flex;
     gap: 8px;

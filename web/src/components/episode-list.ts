@@ -29,6 +29,7 @@ export function episodeList(): {
         episodes: EpisodeItem[],
         timestamps: Array<ApiResult<TimestampMap> | null>,
         isMovie?: boolean,
+        savedSegments?: boolean[],
     ) => void;
     clear: () => void;
     setStatus: (msg: string, color?: string) => void;
@@ -79,6 +80,7 @@ export function episodeList(): {
 
     let currentEpisodes: EpisodeItem[] = [];
     let currentTimestamps: Array<ApiResult<TimestampMap> | null> = [];
+    let currentHasSegments: boolean[] = [];
     let externalTimestampsRef: Array<ApiResult<TimestampMap> | null> | null = null;
     let currentCards: HTMLElement[] = [];
     let filterTimer: ReturnType<typeof setTimeout> | null = null;
@@ -108,6 +110,12 @@ export function episodeList(): {
             ...result,
             data: { ...(result.data ?? {}) },
         };
+    }
+
+    function syncHasSegmentState(index: number, result: ApiResult<TimestampMap> | null): void {
+        currentHasSegments[index] = !!result?.ok && Object.values(result.data ?? {}).some((segment) => {
+            return segment.Start !== 0 || segment.End !== 0;
+        });
     }
 
     function syncBulkButtonState(): void {
@@ -142,7 +150,7 @@ export function episodeList(): {
         }
 
         for (let i = 0; i < currentEpisodes.length; i++) {
-            const card = buildCard(currentEpisodes[i], currentTimestamps[i] ?? null, i);
+            const card = buildCard(currentEpisodes[i], currentTimestamps[i] ?? null, currentHasSegments[i] ?? false, i);
             currentCards.push(card);
             listEl.append(card);
         }
@@ -160,6 +168,7 @@ export function episodeList(): {
     function buildCard(
         ep: EpisodeItem,
         result: ApiResult<TimestampMap> | null,
+        hasSavedSegments: boolean,
         index: number,
     ): HTMLElement {
         const card = el("div", { className: "ts-episode-card" });
@@ -208,6 +217,18 @@ export function episodeList(): {
             : (ep.IndexNumber ?? index + 1).toLocaleString(undefined, { minimumIntegerDigits: 2 }) +
               ": ";
         header.append(el("span", { className: "ts-episode-name" }, prefix + ep.Name));
+        if (hasSavedSegments) {
+            const savedBadge = el(
+                "span",
+                {
+                    className: "ts-episode-segment-badge",
+                    title: "Jellyfin local segments saved",
+                },
+                "✓",
+            );
+            savedBadge.setAttribute("aria-label", "Jellyfin local segments saved for " + ep.Name);
+            header.append(savedBadge);
+        }
         const runtime = ticksToMinutes(ep.RunTimeTicks);
         if (runtime) {
             header.append(el("span", { className: "ts-episode-runtime" }, runtime));
@@ -227,6 +248,7 @@ export function episodeList(): {
             const cloned = cloneTimestampResult(nextResult);
             currentTimestamps[index] = cloned;
             timestampMap = nextResult?.ok === true ? { ...(nextResult.data ?? {}) } : null;
+            syncHasSegmentState(index, cloned);
             if (externalTimestampsRef) {
                 externalTimestampsRef[index] = cloned;
             }
@@ -441,6 +463,7 @@ export function episodeList(): {
                         };
                         const updatedResult = { ok: true, status: response.status, data: nextMap };
                         currentTimestamps[entry.index] = updatedResult;
+                        syncHasSegmentState(entry.index, updatedResult);
                         if (externalTimestampsRef) {
                             externalTimestampsRef[entry.index] = updatedResult;
                         }
@@ -469,6 +492,7 @@ export function episodeList(): {
                         };
                         const updatedResult = { ok: true, status: response.status, data: nextMap };
                         currentTimestamps[entry.index] = updatedResult;
+                        syncHasSegmentState(entry.index, updatedResult);
                         if (externalTimestampsRef) {
                             externalTimestampsRef[entry.index] = updatedResult;
                         }
@@ -592,6 +616,7 @@ export function episodeList(): {
             episodes: EpisodeItem[],
             timestamps: Array<ApiResult<TimestampMap> | null>,
             isMovie = false,
+            savedSegments: boolean[] = [],
         ) {
             isMovieView = isMovie;
             currentEpisodes = episodes;
@@ -600,6 +625,7 @@ export function episodeList(): {
             // for callers that hold the same array (like the action bar).
             externalTimestampsRef = timestamps;
             currentTimestamps = timestamps.map((result) => cloneTimestampResult(result));
+            currentHasSegments = episodes.map((_, index) => Boolean(savedSegments[index]));
             selectedEpisodeIds = new Set(episodes.map((episode) => episode.Id));
             if (filterTimer) clearTimeout(filterTimer);
             filterInput.value = "";
@@ -623,6 +649,7 @@ export function episodeList(): {
             currentCards = [];
             currentEpisodes = [];
             currentTimestamps = [];
+            currentHasSegments = [];
             externalTimestampsRef = null;
             selectedEpisodeIds = new Set();
             if (filterTimer) clearTimeout(filterTimer);

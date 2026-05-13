@@ -71,6 +71,10 @@ export function getEpisodeTimestamps(episodeId: string): Promise<ApiResult<Times
     return getJson<TimestampMap>(`Episode/${encodeURIComponent(episodeId)}/Timestamps`);
 }
 
+export function getEpisodeHasSegments(episodeId: string): Promise<ApiResult<boolean>> {
+    return getJson<boolean>(`Episode/${encodeURIComponent(episodeId)}/HasSegments`);
+}
+
 type UpdateEpisodeTimestampRequest = {
     mode: string;
     currentStart: number;

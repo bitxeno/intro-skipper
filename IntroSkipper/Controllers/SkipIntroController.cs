@@ -13,9 +13,11 @@ using IntroSkipper.Manager;
 using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.MediaSegments;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace IntroSkipper.Controllers;
 
@@ -25,9 +27,10 @@ namespace IntroSkipper.Controllers;
 [Authorize]
 [ApiController]
 [Produces(MediaTypeNames.Application.Json)]
-public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateManager) : ControllerBase
+public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateManager, IServiceProvider serviceProvider) : ControllerBase
 {
     private readonly MediaSegmentUpdateManager _mediaSegmentUpdateManager = mediaSegmentUpdateManager;
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
 
     /// <summary>
     /// Updates the timestamps for the provided episode.
@@ -228,6 +231,26 @@ public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateMan
         }
 
         return times;
+    }
+
+    /// <summary>
+    /// Checks whether the provided episode has any stored media segments.
+    /// </summary>
+    /// <param name="id">Episode ID.</param>
+    /// <response code="200">Whether the item has stored segments.</response>
+    /// <response code="404">Given ID is not an Episode.</response>
+    /// <returns>Boolean segment presence flag.</returns>
+    [HttpGet("Episode/{Id}/HasSegments")]
+    public ActionResult<bool> HasSegments([FromRoute] Guid id)
+    {
+        var rawItem = Plugin.Instance!.GetItem(id);
+        if (rawItem is not Episode and not Movie)
+        {
+            return NotFound();
+        }
+
+        var segmentManager = _serviceProvider.GetRequiredService<IMediaSegmentManager>();
+        return Ok(segmentManager.HasSegments(id));
     }
 
     /// <summary>
