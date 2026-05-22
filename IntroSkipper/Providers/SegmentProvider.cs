@@ -59,7 +59,7 @@ namespace IntroSkipper.Providers
             }
 
             var libraryOptions = _libraryManager.GetLibraryOptions(item);
-            if (libraryOptions != null && libraryOptions.DisabledSubtitleFetchers.Contains(Plugin.Instance.Name))
+            if (libraryOptions != null && libraryOptions.DisabledMediaSegmentProviders.Contains(Plugin.Instance.Name))
             {
                 return request.ExistingSegments.ToArray();
             }

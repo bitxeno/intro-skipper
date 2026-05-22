@@ -1,7 +1,7 @@
 import type { ApiResult, EpisodeItem, TimestampMap } from "../types.ts";
 import { loadPluginConfig } from "./api.ts";
 
-const API_BASE_URL = "https://api.theintrodb.org/v2";
+const API_BASE_URL = "https://api.theintrodb.org/v3";
 const END_OF_MEDIA_TOLERANCE_SEC = 1;
 
 type SupportedTimestampKey = "Introduction" | "Recap" | "Credits" | "Preview";
@@ -23,9 +23,10 @@ export type IntroDbSubmissionPayload = {
     season: string;
     episode: string;
     segment: IntroDbSegmentType;
-    start_sec: number | null;
-    end_sec: number | null;
+    start_ms: number | null;
+    end_ms: number | null;
     imdb_id?: string;
+    video_duration_ms?: number | null;
 };
 
 export type IntroDbSubmissionPlanEntry = {
@@ -136,6 +137,9 @@ export function buildSeasonSubmissionPlan(opts: {
                 continue;
             }
 
+            const normalizedStart = normalizeStart(mapping.target, segment.Start);
+            const normalizedEnd = normalizeEnd(mapping.target, segment.End, runtimeSeconds);
+
             plan.push({
                 episodeId: episode.Id,
                 episodeName: episode.Name,
@@ -147,9 +151,10 @@ export function buildSeasonSubmissionPlan(opts: {
                     season: String(opts.seasonNumber),
                     episode: String(episode.IndexNumber),
                     segment: mapping.target,
-                    start_sec: normalizeStart(mapping.target, segment.Start),
-                    end_sec: normalizeEnd(mapping.target, segment.End, runtimeSeconds),
+                    start_ms: normalizedStart == null ? null : Math.round(normalizedStart * 1000),
+                    end_ms: normalizedEnd == null ? null : Math.round(normalizedEnd * 1000),
                     ...(opts.imdbId ? { imdb_id: opts.imdbId } : {}),
+                    ...(runtimeSeconds != null ? { video_duration_ms: Math.round(runtimeSeconds * 1000) } : {}),
                 },
             });
         }
@@ -191,12 +196,21 @@ export async function submitSeasonPlan(
 
         let errorMessage = "HTTP " + response.status;
         try {
-            const data = (await response.json()) as { error?: string };
-            if (data.error) {
-                errorMessage = data.error;
+            const data = await response.json();
+            if (data) {
+                if (typeof data.error === 'string' && data.error.trim() !== '') {
+                    errorMessage = data.error;
+                } else if (typeof data.message === 'string' && data.message.trim() !== '') {
+                    errorMessage = data.message;
+                } else if (typeof data.details === 'string' && data.details.trim() !== '') {
+                    errorMessage = data.details;
+                } else if (Array.isArray((data as any).errors) && (data as any).errors.length > 0) {
+                    const errs = (data as any).errors.map((e: any) => (typeof e === 'string' ? e : e?.message ?? String(e)));
+                    errorMessage = errs.join('; ');
+                }
             }
         } catch {
-            // Leave the generic HTTP error in place when the response is not JSON.
+            // Leave the generic HTTP error in place when the response is not JSON or cannot be parsed.
         }
 
         if (response.status === 401) {
