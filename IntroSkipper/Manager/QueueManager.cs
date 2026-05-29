@@ -438,27 +438,49 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
                 // Jellyfin does not automatically probe .strm duration
                 if (candidate.IsShortcut && candidate.Duration == 0)
                 {
-                    var duration = FFmpegWrapper.ProbeDuration(candidate);
-                    candidate.Duration = duration;
-                    _logger.LogInformation("Probed duration {Duration}s for shortcut video {Name} ({Id})", duration, candidate.Name, candidate.EpisodeId);
+                    var item = _libraryManager.GetItemById(candidate.EpisodeId);
+
+                    if (item != null)
+                    {
+                        var refreshOptions = new MetadataRefreshOptions(new DirectoryService(_fileSystem))
+                        {
+                            MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
+                            ImageRefreshMode = MetadataRefreshMode.None,
+                            EnableRemoteContentProbe = true,
+                            ReplaceAllImages = false,
+                            ReplaceAllMetadata = false,
+                            ForceSave = false,
+                            IsAutomated = true,
+                            RemoveOldMetadata = false,
+                            RegenerateTrickplay = false
+                        };
+
+                        await item.RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
+
+                        candidate.Duration = TimeSpan.FromTicks(item.RunTimeTicks ?? 0).TotalSeconds;
+                        _logger.LogInformation("Probed duration {Duration}s for shortcut video {Name} ({Id})", candidate.Duration, candidate.Name, candidate.EpisodeId);
+                    }
 
                     // Recalculate fingerprint ranges based on actual duration
-                    if (candidate.Category == QueuedMediaCategory.Movie)
+                    if (candidate.Duration > 0)
                     {
-                        candidate.CreditsFingerprintStart = Math.Max(0, duration - plugin.Configuration.MaximumMovieCreditsDuration);
-                    }
-                    else
-                    {
-                        var fingerprintDuration = Math.Min(
-                            duration >= 5 * 60 ? duration * _analysisPercent : duration,
-                            60 * plugin.Configuration.AnalysisLengthLimit);
+                        if (candidate.Category == QueuedMediaCategory.Movie)
+                        {
+                            candidate.CreditsFingerprintStart = Math.Max(0, candidate.Duration - plugin.Configuration.MaximumMovieCreditsDuration);
+                        }
+                        else
+                        {
+                            var fingerprintDuration = Math.Min(
+                                candidate.Duration >= 5 * 60 ? candidate.Duration * _analysisPercent : candidate.Duration,
+                                60 * plugin.Configuration.AnalysisLengthLimit);
 
-                        var maxCreditsDuration = Math.Min(
-                            duration >= 5 * 60 ? duration * _analysisPercent : duration,
-                            60 * plugin.Configuration.MaximumCreditsDuration);
+                            var maxCreditsDuration = Math.Min(
+                                candidate.Duration >= 5 * 60 ? candidate.Duration * _analysisPercent : candidate.Duration,
+                                60 * plugin.Configuration.MaximumCreditsDuration);
 
-                        candidate.IntroFingerprintEnd = fingerprintDuration;
-                        candidate.CreditsFingerprintStart = Math.Max(0, duration - maxCreditsDuration);
+                            candidate.IntroFingerprintEnd = fingerprintDuration;
+                            candidate.CreditsFingerprintStart = Math.Max(0, candidate.Duration - maxCreditsDuration);
+                        }
                     }
                 }
 
