@@ -111,7 +111,7 @@ public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateMan
             return BadRequest("Unknown timestamp mode.");
         }
 
-        if (request.CurrentStart < 0 || request.CurrentEnd <= request.CurrentStart)
+        if (request.CurrentStart < 0 || request.CurrentEnd < request.CurrentStart)
         {
             return BadRequest("Invalid current timestamp range.");
         }

@@ -2,6 +2,7 @@ import { el } from "./dom.ts";
 import { formatTime } from "../utils.ts";
 import * as api from "../store/api.ts";
 import { getImageUrl } from "../store/jellyfin-client.ts";
+import { timestampBulkAddDialog } from "./timestamp-bulk-add-dialog.ts";
 import { timestampBulkEditDialog } from "./timestamp-bulk-edit-dialog.ts";
 import { timestampEditDialog } from "./timestamp-edit-dialog.ts";
 import type { EpisodeItem, TimestampMap, ApiResult } from "../types.ts";
@@ -67,7 +68,13 @@ export function episodeList(): {
         "Bulk Duration",
     ) as HTMLButtonElement;
     bulkDurationButton.setAttribute("aria-label", "Adjust the duration for selected timestamps");
-    filterActions.append(countEl, selectAllButton, invertSelectionButton, bulkDurationButton);
+    const bulkAddButton = el(
+        "button",
+        { className: "ts-bulk-edit-btn", type: "button" },
+        "Bulk Add",
+    ) as HTMLButtonElement;
+    bulkAddButton.setAttribute("aria-label", "Set timestamps for selected episodes");
+    filterActions.append(countEl, selectAllButton, invertSelectionButton, bulkDurationButton, bulkAddButton);
     filterBar.append(filterInput, filterActions);
 
     const statusEl = el("div", { className: "ts-status-msg" });
@@ -121,6 +128,7 @@ export function episodeList(): {
     function syncBulkButtonState(): void {
         const selectedCount = getSelectedEpisodeIds().length;
         bulkDurationButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
+        bulkAddButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
         selectAllButton.disabled =
             isBatchSaving || currentEpisodes.length === 0 || selectedCount === currentEpisodes.length;
         invertSelectionButton.disabled = isBatchSaving || currentEpisodes.length === 0;
@@ -532,6 +540,98 @@ export function episodeList(): {
         return true;
     }
 
+    async function applyBulkAdd(
+        modeKey: string,
+        start: number,
+        end: number,
+        selectedEpisodeIds?: string[],
+    ): Promise<boolean> {
+        const modeLabel = TIMESTAMP_MODES.find((mode) => mode.key === modeKey)?.label ?? modeKey;
+        const selectedIdSet = new Set(selectedEpisodeIds ?? getSelectedEpisodeIds());
+        const selectedCount = selectedIdSet.size;
+
+        if (selectedCount === 0) {
+            setStatusMessage("No episodes selected for bulk update.", "var(--is-warning)");
+            return false;
+        }
+
+        isBatchSaving = true;
+        syncBulkButtonState();
+
+        let updated = 0;
+        let failed = 0;
+        let firstError: string | null = null;
+
+        try {
+            for (let i = 0; i < currentEpisodes.length; i++) {
+                const episode = currentEpisodes[i];
+                if (!selectedIdSet.has(episode.Id)) {
+                    continue;
+                }
+
+                setStatusMessage(
+                    "Saving " + String(updated + failed + 1) + "/" + String(selectedCount) + " " + episode.Name + "\u2026",
+                    "var(--is-text-muted)",
+                );
+
+                const currentResult = currentTimestamps[i];
+                const existingSegment = currentResult?.ok === true ? currentResult.data?.[modeKey] : undefined;
+                const currentStart = existingSegment ? existingSegment.Start : 0;
+                const currentEnd = existingSegment ? existingSegment.End : 0;
+
+                const response = await api.updateEpisodeTimestamp(episode.Id, {
+                    mode: modeKey,
+                    currentStart,
+                    currentEnd,
+                    start,
+                    end,
+                });
+
+                if (response.ok) {
+                    updated += 1;
+                    const nextMap = {
+                        ...(currentResult?.ok === true ? currentResult.data ?? {} : {}),
+                        [modeKey]: { Start: start, End: end },
+                    };
+                    const updatedResult = { ok: true, status: response.status, data: nextMap };
+                    currentTimestamps[i] = updatedResult;
+                    syncHasSegmentState(i, updatedResult);
+                    if (externalTimestampsRef) {
+                        externalTimestampsRef[i] = updatedResult;
+                    }
+                } else {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = episode.Name + " (HTTP " + response.status + ")";
+                    }
+                }
+            }
+        } finally {
+            isBatchSaving = false;
+            syncBulkButtonState();
+        }
+
+        rebuildList(true);
+
+        const unselected = currentEpisodes.length - selectedCount;
+        const summary =
+            "Updated " +
+            String(updated) +
+            " " +
+            modeLabel +
+            " timestamps" +
+            (failed > 0 ? ", failed " + String(failed) : "") +
+            (unselected > 0 ? ", left " + String(unselected) + " unselected" : "") +
+            ".";
+
+        setStatusMessage(
+            failed > 0 && firstError ? summary + " First error: " + firstError : summary,
+            failed > 0 ? "var(--is-warning)" : "var(--is-success)",
+        );
+
+        return true;
+    }
+
     async function handleBulkDurationClick(): Promise<void> {
         if (isBatchSaving || currentEpisodes.length === 0) {
             return;
@@ -609,6 +709,35 @@ export function episodeList(): {
     };
     bulkDurationButton.addEventListener("click", handleBulkDurationButtonClick);
 
+    async function handleBulkAddClick(): Promise<void> {
+        if (isBatchSaving || currentEpisodes.length === 0) {
+            return;
+        }
+
+        let pendingRequest: { modeKey: string; start: number; end: number } | null = null;
+        await timestampBulkAddDialog({
+            title: "Bulk Add Timestamp",
+            modes: TIMESTAMP_MODES,
+            defaultModeKey: TIMESTAMP_MODES[0]?.key,
+            onSave: async (values) => {
+                pendingRequest = values;
+                return true;
+            },
+        });
+
+        const bulkRequest = pendingRequest as { modeKey: string; start: number; end: number } | null;
+        if (!bulkRequest) {
+            return;
+        }
+
+        await applyBulkAdd(bulkRequest.modeKey, bulkRequest.start, bulkRequest.end, getSelectedEpisodeIds());
+    }
+
+    const handleBulkAddButtonClick = () => {
+        void handleBulkAddClick().catch(console.error);
+    };
+    bulkAddButton.addEventListener("click", handleBulkAddButtonClick);
+
     return {
         container,
 
@@ -672,6 +801,7 @@ export function episodeList(): {
             selectAllButton.removeEventListener("click", handleSelectAllButtonClick);
             invertSelectionButton.removeEventListener("click", handleInvertSelectionButtonClick);
             bulkDurationButton.removeEventListener("click", handleBulkDurationButtonClick);
+            bulkAddButton.removeEventListener("click", handleBulkAddButtonClick);
         },
     };
 }
