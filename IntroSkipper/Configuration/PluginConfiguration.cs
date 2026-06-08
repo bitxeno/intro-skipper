@@ -108,6 +108,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool PreferChromaprint { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether ChromaprintAnalyzer is used for credits analysis.
+    /// When disabled, ChromaprintAnalyzer will not be included in the credits analysis pipeline.
+    /// </summary>
+    public bool EnableChromaprintCreditsAnalysis { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets a value indicating whether the episode's fingerprint should be cached to the filesystem.
     /// </summary>
     public bool CacheFingerprints { get; set; } = true;
@@ -122,6 +128,12 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether to use the alternative black frame analyzer.
     /// </summary>
     public bool UseAlternativeBlackFrameAnalyzer { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the black frame analyzers are enabled.
+    /// When disabled, neither BlackFrameAnalyzer nor BlackFrameAltAnalyzer will be used during analysis.
+    /// </summary>
+    public bool EnableBlackFrameAnalyzer { get; set; } = true;
 
     /// <summary>
     /// Gets or sets a value indicating whether to refine credits boundaries with frame-level analysis.

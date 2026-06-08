@@ -227,19 +227,25 @@ public partial class BaseItemAnalyzerTask(
             if (isAnime)
             {
                 // Anime credits: Chromaprint before BlackFrame (fingerprint matching preferred)
-                if (_ffmpegValid)
+                if (_ffmpegValid && _config.EnableChromaprintCreditsAnalysis)
                 {
                     analyzers.Add(new ChromaprintAnalyzer(_loggerFactory.CreateLogger<ChromaprintAnalyzer>()));
                 }
 
-                analyzers.Add(CreateBlackFrameAnalyzer());
+                if (_config.EnableBlackFrameAnalyzer)
+                {
+                    analyzers.Add(CreateBlackFrameAnalyzer());
+                }
             }
             else
             {
                 // Non-anime credits: BlackFrame before Chromaprint
-                analyzers.Add(CreateBlackFrameAnalyzer());
+                if (_config.EnableBlackFrameAnalyzer)
+                {
+                    analyzers.Add(CreateBlackFrameAnalyzer());
+                }
 
-                if (!isMovie && _ffmpegValid)
+                if (!isMovie && _ffmpegValid && _config.EnableChromaprintCreditsAnalysis)
                 {
                     analyzers.Add(new ChromaprintAnalyzer(_loggerFactory.CreateLogger<ChromaprintAnalyzer>()));
                 }

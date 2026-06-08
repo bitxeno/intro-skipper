@@ -11,24 +11,31 @@ export const blackFrameTab: Tab = {
         appendTabContent(
             container,
             checkboxField({
+                id: "EnableBlackFrameAnalyzer",
+                label: "Enable black frame analyzer",
+                description:
+                    "Enable or disable the black frame analyzers (BlackFrameAnalyzer and BlackFrameAltAnalyzer) during analysis. When disabled, black frame detection will not be used for credits detection.",
+            }),
+            checkboxField({
                 id: "UseAlternativeBlackFrameAnalyzer",
                 label: "Use alternative black frame analyzer (experimental)",
                 description:
                     "If enabled, the alternative black frame analyzer will be used. This analyzer is experimental and may not work as expected.",
+                visible: () => configStore.get("EnableBlackFrameAnalyzer") === true,
             }),
             checkboxField({
                 id: "RefineCreditsBoundary",
                 label: "Refine credits boundary",
                 description:
                     "Use frame-level analysis to find the exact credits boundary. Disable for faster analysis with keyframe-only accuracy.",
-                visible: () => configStore.get("UseAlternativeBlackFrameAnalyzer") === true,
+                visible: () => configStore.get("EnableBlackFrameAnalyzer") === true && configStore.get("UseAlternativeBlackFrameAnalyzer") === true,
             }),
             checkboxField({
                 id: "UseChapterMarkersBlackFrame",
                 label: "Use chapter markers for credits detection",
                 description:
                     "If enabled, chapter markers will be used to identify credits segments. Tries to detect credits by looking for black frames close to chapter markers.",
-                visible: () => configStore.get("UseAlternativeBlackFrameAnalyzer") !== true,
+                visible: () => configStore.get("EnableBlackFrameAnalyzer") === true && configStore.get("UseAlternativeBlackFrameAnalyzer") !== true,
             }),
             numberField({
                 id: "BlackFrameMinimumPercentage",
@@ -37,6 +44,7 @@ export const blackFrameTab: Tab = {
                 max: 100,
                 description:
                     "Minimum percentage of black pixels in a frame before it is considered a black frame. Defaults to 85.",
+                visible: () => configStore.get("EnableBlackFrameAnalyzer") === true,
             }),
             numberField({
                 id: "BlackFrameThreshold",
@@ -45,6 +53,7 @@ export const blackFrameTab: Tab = {
                 max: 255,
                 description:
                     "The threshold below which a pixel value is considered black. Defaults to 32.",
+                visible: () => configStore.get("EnableBlackFrameAnalyzer") === true,
             }),
         );
     },

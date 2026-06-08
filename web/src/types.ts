@@ -46,6 +46,7 @@ export interface PluginConfig {
     AnalyzeSeasonZero: boolean;
     UpdateMediaSegments: boolean;
     UseAlternativeBlackFrameAnalyzer: boolean;
+    EnableBlackFrameAnalyzer: boolean;
     RefineCreditsBoundary: boolean;
     UseChapterMarkersBlackFrame: boolean;
     FullLengthChapters: boolean;
@@ -59,6 +60,7 @@ export interface PluginConfig {
     ScanCommercial: boolean;
     EnableMainMenu: boolean;
     PreferChromaprint: boolean;
+    EnableChromaprintCreditsAnalysis: boolean;
     SnapToKeyframe: boolean;
     AdjustIntroBasedOnSilence: boolean;
     AdjustIntroBasedOnChapters: boolean;

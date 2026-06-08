@@ -51,6 +51,12 @@ export const analysisTab: Tab = {
                     "Only use chromaprint for analysis, unless it is not available. Setting an analysis mode in the advanced options will override this setting.",
             }),
             checkboxField({
+                id: "EnableChromaprintCreditsAnalysis",
+                label: "Enable Chromaprint for Credits analysis",
+                description:
+                    "Use Chromaprint audio fingerprinting to detect credits segments. When disabled, only chapter and black frame analyzers will be used for credits.",
+            }),
+            checkboxField({
                 id: "FullLengthChapters",
                 label: "Ignore duration limits for chapters",
                 description:
