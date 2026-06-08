@@ -254,6 +254,25 @@ public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateMan
     }
 
     /// <summary>
+    /// Gets the chapter markers for the provided episode.
+    /// </summary>
+    /// <param name="id">Episode ID.</param>
+    /// <response code="200">Chapters retrieved.</response>
+    /// <response code="404">Given ID is not an Episode.</response>
+    /// <returns>List of chapter info objects.</returns>
+    [HttpGet("Episode/{Id}/Chapters")]
+    public ActionResult<IReadOnlyList<MediaBrowser.Model.Entities.ChapterInfo>> GetChapters([FromRoute] Guid id)
+    {
+        var rawItem = Plugin.Instance!.GetItem(id);
+        if (rawItem is not Episode and not Movie)
+        {
+            return NotFound();
+        }
+
+        return Ok(Plugin.Instance!.GetChapters(id));
+    }
+
+    /// <summary>
     /// Gets a dictionary of all skippable segments.
     /// </summary>
     /// <param name="id">Media ID.</param>

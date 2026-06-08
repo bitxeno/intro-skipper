@@ -89,6 +89,11 @@ export type TimestampSegment = {
     End: number;
 };
 
+export type EpisodeChapter = {
+    Name: string | null;
+    StartPositionTicks: number;
+};
+
 export type TimestampMap = Record<string, TimestampSegment>;
 
 export type ScanStatus = {

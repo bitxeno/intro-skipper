@@ -827,3 +827,91 @@ a {
 .is-confirm-btn.primary:hover {
     opacity: 0.9;
 }
+
+/* Chapter picker dialog. */
+
+.is-chapter-picker-dialog {
+    max-width: 480px;
+}
+
+.is-chapter-list {
+    max-height: 320px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+    border: 1px solid var(--is-border);
+    border-radius: 4px;
+}
+
+.is-chapter-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    border-bottom: 1px solid var(--is-border);
+    background: transparent;
+    color: var(--is-text);
+    font: inherit;
+    font-size: 0.9em;
+    cursor: pointer;
+    text-align: left;
+    gap: 12px;
+}
+
+.is-chapter-item:last-child {
+    border-bottom: none;
+}
+
+.is-chapter-item:hover {
+    background: var(--is-hover);
+}
+
+.is-chapter-item:focus-visible {
+    outline: 2px solid var(--is-accent);
+    outline-offset: -2px;
+}
+
+.is-chapter-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.is-chapter-time {
+    font-size: 0.85em;
+    color: var(--is-text-muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.is-chapter-loading {
+    padding: 16px;
+    text-align: center;
+    color: var(--is-text-muted);
+    font-size: 0.9em;
+}
+
+/* Chapter button on timestamp pills. */
+
+.ts-timestamp-chapter-btn {
+    padding: 2px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--is-border);
+    background: var(--is-input-bg);
+    color: var(--is-text-muted);
+    font-size: 0.7em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ts-timestamp-chapter-btn:hover {
+    background: var(--is-hover-strong);
+    color: var(--is-text);
+}
+
+.ts-timestamp-chapter-btn:focus-visible {
+    outline: 2px solid var(--is-accent);
+    outline-offset: 2px;
+}

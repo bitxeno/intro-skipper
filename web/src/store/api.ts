@@ -9,6 +9,7 @@ import type {
     LibraryStorage,
     SystemStorageInfo,
     VisualizerMode,
+    EpisodeChapter,
 } from "../types.ts";
 
 const PLUGIN_ID = "c83d86bb-a1e0-4c35-a113-e2101cf4ee6b";
@@ -73,6 +74,10 @@ export function getEpisodeTimestamps(episodeId: string): Promise<ApiResult<Times
 
 export function getEpisodeHasSegments(episodeId: string): Promise<ApiResult<boolean>> {
     return getJson<boolean>(`Episode/${encodeURIComponent(episodeId)}/HasSegments`);
+}
+
+export function getEpisodeChapters(episodeId: string): Promise<ApiResult<EpisodeChapter[]>> {
+    return getJson<EpisodeChapter[]>(`Episode/${encodeURIComponent(episodeId)}/Chapters`);
 }
 
 type UpdateEpisodeTimestampRequest = {

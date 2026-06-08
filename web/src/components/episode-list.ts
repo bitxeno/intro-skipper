@@ -5,6 +5,7 @@ import { getImageUrl } from "../store/jellyfin-client.ts";
 import { timestampBulkAddDialog } from "./timestamp-bulk-add-dialog.ts";
 import { timestampBulkEditDialog } from "./timestamp-bulk-edit-dialog.ts";
 import { timestampEditDialog } from "./timestamp-edit-dialog.ts";
+import { chapterPickerDialog } from "./chapter-picker-dialog.ts";
 import type { EpisodeItem, TimestampMap, ApiResult } from "../types.ts";
 
 /** Delay before filtering the episode list (ms). */
@@ -275,51 +276,77 @@ export function episodeList(): {
             errorDiv.style.display = "none";
             timestampsContainer.style.display = "";
             timestampsContainer.replaceChildren(
-                buildTimestampPills(timestampMap, (mode, seg) => {
-                    void timestampEditDialog({
-                        title: "Edit " + mode.label + " Timestamp",
-                        initialStart: seg.Start,
-                        initialEnd: seg.End,
-                        onSave: async ({ start, end }) => {
-                            const response = await api.updateEpisodeTimestamp(ep.Id, {
-                                mode: mode.key,
-                                currentStart: seg.Start,
-                                currentEnd: seg.End,
-                                start,
-                                end,
-                            });
+                buildTimestampPills(
+                    timestampMap,
+                    (mode, seg) => {
+                        void timestampEditDialog({
+                            title: "Edit " + mode.label + " Timestamp",
+                            initialStart: seg.Start,
+                            initialEnd: seg.End,
+                            onSave: async ({ start, end }) => {
+                                const response = await api.updateEpisodeTimestamp(ep.Id, {
+                                    mode: mode.key,
+                                    currentStart: seg.Start,
+                                    currentEnd: seg.End,
+                                    start,
+                                    end,
+                                });
 
-                            if (!response.ok) {
-                                return false;
+                                if (!response.ok) {
+                                    return false;
+                                }
+
+                                const nextMap = {
+                                    ...(timestampMap ?? {}),
+                                    [mode.key]: { Start: start, End: end },
+                                };
+                                commitTimestampResult({ ok: true, status: response.status, data: nextMap });
+                                rebuildList(true);
+                                return true;
+                            },
+                            onDelete: async () => {
+                                const response = await api.deleteEpisodeTimestamp(ep.Id, {
+                                    mode: mode.key,
+                                    currentStart: seg.Start,
+                                    currentEnd: seg.End,
+                                });
+
+                                if (!response.ok) {
+                                    return false;
+                                }
+
+                                const nextMap = { ...(timestampMap ?? {}) };
+                                delete nextMap[mode.key];
+                                commitTimestampResult({ ok: true, status: response.status, data: nextMap });
+                                rebuildList(true);
+                                return true;
+                            },
+                        });
+                    },
+                    (mode, range) => {
+                        const currentSeg = timestampMap?.[mode.key];
+                        const currentStart = currentSeg ? currentSeg.Start : 0;
+                        const currentEnd = currentSeg ? currentSeg.End : 0;
+                        void api.updateEpisodeTimestamp(ep.Id, {
+                            mode: mode.key,
+                            currentStart,
+                            currentEnd,
+                            start: range.start,
+                            end: range.end,
+                        }).then((response) => {
+                            if (response.ok) {
+                                const nextMap = {
+                                    ...(timestampMap ?? {}),
+                                    [mode.key]: { Start: range.start, End: range.end },
+                                };
+                                commitTimestampResult({ ok: true, status: response.status, data: nextMap });
+                                rebuildList(true);
                             }
-
-                            const nextMap = {
-                                ...(timestampMap ?? {}),
-                                [mode.key]: { Start: start, End: end },
-                            };
-                            commitTimestampResult({ ok: true, status: response.status, data: nextMap });
-                            rebuildList(true);
-                            return true;
-                        },
-                        onDelete: async () => {
-                            const response = await api.deleteEpisodeTimestamp(ep.Id, {
-                                mode: mode.key,
-                                currentStart: seg.Start,
-                                currentEnd: seg.End,
-                            });
-
-                            if (!response.ok) {
-                                return false;
-                            }
-
-                            const nextMap = { ...(timestampMap ?? {}) };
-                            delete nextMap[mode.key];
-                            commitTimestampResult({ ok: true, status: response.status, data: nextMap });
-                            rebuildList(true);
-                            return true;
-                        },
-                    });
-                }),
+                        });
+                    },
+                    ep.Id,
+                    ep.RunTimeTicks ? ep.RunTimeTicks / 10_000_000 : undefined,
+                ),
             );
         }
 
@@ -352,6 +379,9 @@ export function episodeList(): {
     function buildTimestampPills(
         ts: TimestampMap,
         onEdit?: (mode: { key: string; label: string }, seg: { Start: number; End: number }) => void,
+        onChapterSelect?: (mode: { key: string; label: string }, range: { start: number; end: number }) => void,
+        episodeId?: string,
+        episodeDurationSeconds?: number,
     ): HTMLElement {
         const row = el("div", { className: "ts-episode-timestamps" });
         for (const mode of TIMESTAMP_MODES) {
@@ -383,6 +413,23 @@ export function episodeList(): {
             } else {
                 entry.append(el("span", { className: "ts-timestamp-missing" }, mode.label + " \u2013"));
             }
+
+            if (onChapterSelect && episodeId && episodeDurationSeconds !== undefined) {
+                const chBtn = el("button", { className: "ts-timestamp-chapter-btn", type: "button" }, "Ch.");
+                chBtn.setAttribute("aria-label", "Set " + mode.label + " from chapter");
+                chBtn.addEventListener("click", () => {
+                    chapterPickerDialog({
+                        title: "Set " + mode.label + " from Chapter",
+                        episodeId,
+                        episodeDurationSeconds,
+                        onSelect: (range) => {
+                            onChapterSelect(mode, range);
+                        },
+                    });
+                });
+                entry.append(chBtn);
+            }
+
             row.append(entry);
         }
         return row;
