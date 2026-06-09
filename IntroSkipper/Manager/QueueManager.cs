@@ -458,7 +458,7 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
                         await item.RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
 
                         candidate.Duration = TimeSpan.FromTicks(item.RunTimeTicks ?? 0).TotalSeconds;
-                        _logger.LogInformation("Probed duration {Duration}s for shortcut video {Name} ({Id})", candidate.Duration, candidate.Name, candidate.EpisodeId);
+                        _logger.LogInformation("Probed duration {Duration}s for shortcut video E{EpisodeNumber}.{Name} ({Id})", candidate.Duration, candidate.EpisodeNumber, candidate.Name, candidate.EpisodeId);
                     }
 
                     // Recalculate fingerprint ranges based on actual duration

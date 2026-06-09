@@ -302,6 +302,7 @@ export function createTimestampsBrowser(container: HTMLElement): { destroy: () =
                 episodes,
                 timestamps,
                 isMovie: false,
+                getSelectedEpisodeIds: () => epList.getSelectedEpisodeIds(),
             });
         } catch (err) {
             if (!nav$.isCurrentPanel(panelToken)) return;
@@ -346,6 +347,7 @@ export function createTimestampsBrowser(container: HTMLElement): { destroy: () =
                 episodes: [movieEp],
                 timestamps: [result],
                 isMovie: true,
+                getSelectedEpisodeIds: () => epList.getSelectedEpisodeIds(),
             });
         } catch (err) {
             if (!nav$.isCurrentPanel(panelToken)) return;

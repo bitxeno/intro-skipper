@@ -62,7 +62,7 @@ public partial class ChromaprintAnalyzer(ILogger<ChromaprintAnalyzer> logger) : 
         {
             try
             {
-                _logger.LogInformation("Computing fingerprint for episode {Name} ({Id})", episode.Name, episode.EpisodeId);
+                _logger.LogInformation("Computing fingerprint for episode E{EpisodeNumber}.{Name} ({Id})", episode.EpisodeNumber, episode.Name, episode.EpisodeId);
                 fingerprintCache[episode.EpisodeId] = FFmpegWrapper.Fingerprint(episode, mode);
 
                 if (cancellationToken.IsCancellationRequested)

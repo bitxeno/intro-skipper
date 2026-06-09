@@ -81,6 +81,7 @@ export type ActionBarLoadContext = {
     episodes: EpisodeItem[];
     timestamps: Array<ApiResult<TimestampMap> | null>;
     isMovie: boolean;
+    getSelectedEpisodeIds?: () => string[];
 };
 
 export function actionBar(opts: ActionBarOptions): {
@@ -164,6 +165,7 @@ export function actionBar(opts: ActionBarOptions): {
     let currentEpisodes: EpisodeItem[] = [];
     let currentTimestamps: Array<ApiResult<TimestampMap> | null> = [];
     let currentIsMovie = false;
+    let getSelectedEpisodeIds: (() => string[]) | null = null;
     let destroyed = false;
     let loadVersion = 0;
     let scanVersion = 0;
@@ -359,12 +361,27 @@ export function actionBar(opts: ActionBarOptions): {
             return;
         }
 
+        const selectedIds = getSelectedEpisodeIds?.();
+        let selectedEpisodes = currentEpisodes;
+        let selectedTimestamps = currentTimestamps;
+        if (selectedIds && selectedIds.length < currentEpisodes.length) {
+            const idSet = new Set(selectedIds);
+            selectedEpisodes = [];
+            selectedTimestamps = [];
+            for (let i = 0; i < currentEpisodes.length; i++) {
+                if (idSet.has(currentEpisodes[i].Id)) {
+                    selectedEpisodes.push(currentEpisodes[i]);
+                    selectedTimestamps.push(currentTimestamps[i]);
+                }
+            }
+        }
+
         const plan = theIntroDb.buildSeasonSubmissionPlan({
             tmdbId,
             imdbId,
             seasonNumber: currentSeasonNumber,
-            episodes: currentEpisodes,
-            timestamps: currentTimestamps,
+            episodes: selectedEpisodes,
+            timestamps: selectedTimestamps,
         });
 
         if (plan.length === 0) {
@@ -513,6 +530,7 @@ export function actionBar(opts: ActionBarOptions): {
             currentEpisodes = context.episodes;
             currentTimestamps = context.timestamps;
             currentIsMovie = context.isMovie;
+            getSelectedEpisodeIds = context.getSelectedEpisodeIds ?? null;
 
             resetScanButton();
             resetSubmitButton();

@@ -3,6 +3,7 @@ import { formatTime } from "../utils.ts";
 import * as api from "../store/api.ts";
 import { getImageUrl } from "../store/jellyfin-client.ts";
 import { timestampBulkAddDialog } from "./timestamp-bulk-add-dialog.ts";
+import { timestampBulkChapterMatchDialog } from "./timestamp-bulk-chapter-match-dialog.ts";
 import { timestampBulkEditDialog } from "./timestamp-bulk-edit-dialog.ts";
 import { timestampEditDialog } from "./timestamp-edit-dialog.ts";
 import { chapterPickerDialog } from "./chapter-picker-dialog.ts";
@@ -25,6 +26,11 @@ type BulkDurationRequest = {
     target?: "end" | "start";
 };
 
+type ChapterRange = {
+    start: number;
+    end: number;
+};
+
 export function episodeList(): {
     container: HTMLElement;
     render: (
@@ -33,6 +39,7 @@ export function episodeList(): {
         isMovie?: boolean,
         savedSegments?: boolean[],
     ) => void;
+    getSelectedEpisodeIds: () => string[];
     clear: () => void;
     setStatus: (msg: string, color?: string) => void;
     destroy: () => void;
@@ -75,7 +82,23 @@ export function episodeList(): {
         "Bulk Add",
     ) as HTMLButtonElement;
     bulkAddButton.setAttribute("aria-label", "Set timestamps for selected episodes");
-    filterActions.append(countEl, selectAllButton, invertSelectionButton, bulkDurationButton, bulkAddButton);
+    const bulkChapterMatchButton = el(
+        "button",
+        { className: "ts-bulk-edit-btn", type: "button" },
+        "Match Chapters",
+    ) as HTMLButtonElement;
+    bulkChapterMatchButton.setAttribute(
+        "aria-label",
+        "Match chapter times across selected episodes and save them as a timestamp type",
+    );
+    filterActions.append(
+        countEl,
+        selectAllButton,
+        invertSelectionButton,
+        bulkDurationButton,
+        bulkAddButton,
+        bulkChapterMatchButton,
+    );
     filterBar.append(filterInput, filterActions);
 
     const statusEl = el("div", { className: "ts-status-msg" });
@@ -130,9 +153,67 @@ export function episodeList(): {
         const selectedCount = getSelectedEpisodeIds().length;
         bulkDurationButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
         bulkAddButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
+        bulkChapterMatchButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
         selectAllButton.disabled =
             isBatchSaving || currentEpisodes.length === 0 || selectedCount === currentEpisodes.length;
         invertSelectionButton.disabled = isBatchSaving || currentEpisodes.length === 0;
+    }
+
+    function getEpisodeDurationSeconds(episode: EpisodeItem): number | undefined {
+        if (!episode.RunTimeTicks) {
+            return undefined;
+        }
+
+        return episode.RunTimeTicks / 10_000_000;
+    }
+
+    function getChapterRanges(
+        chapters: EpisodeChapter[] | undefined,
+        episodeDurationSeconds: number | undefined,
+    ): ChapterRange[] {
+        if (!chapters || chapters.length === 0 || episodeDurationSeconds === undefined) {
+            return [];
+        }
+
+        const ranges: ChapterRange[] = [];
+        for (let index = 0; index < chapters.length; index++) {
+            const start = chapters[index].StartPositionTicks / 10_000_000;
+            const end = index + 1 < chapters.length
+                ? chapters[index + 1].StartPositionTicks / 10_000_000
+                : episodeDurationSeconds;
+
+            if (end > start) {
+                ranges.push({ start, end });
+            }
+        }
+
+        return ranges;
+    }
+
+    function findClosestMatchingChapterRange(
+        episode: EpisodeItem,
+        referenceDuration: number,
+        toleranceSeconds: number,
+    ): ChapterRange | null {
+        const ranges = getChapterRanges(episode.Chapters, getEpisodeDurationSeconds(episode));
+        let bestRange: ChapterRange | null = null;
+        let bestScore = Number.POSITIVE_INFINITY;
+
+        for (const range of ranges) {
+            const duration = range.end - range.start;
+            const durationDelta = Math.abs(duration - referenceDuration);
+            if (durationDelta > toleranceSeconds) {
+                continue;
+            }
+
+            const score = durationDelta;
+            if (score < bestScore) {
+                bestRange = range;
+                bestScore = score;
+            }
+        }
+
+        return bestRange;
     }
 
     function setStatusMessage(msg: string, color = "var(--is-text-muted)"): void {
@@ -679,6 +760,123 @@ export function episodeList(): {
         return true;
     }
 
+    async function applyBulkChapterMatch(
+        modeKey: string,
+        referenceDuration: number,
+        toleranceSeconds: number,
+        selectedEpisodeIds?: string[],
+    ): Promise<boolean> {
+        const modeLabel = TIMESTAMP_MODES.find((mode) => mode.key === modeKey)?.label ?? modeKey;
+        const selectedIdSet = new Set(selectedEpisodeIds ?? getSelectedEpisodeIds());
+        const selectedCount = selectedIdSet.size;
+
+        if (selectedCount === 0) {
+            setStatusMessage("No episodes selected for bulk update.", "var(--is-warning)");
+            return false;
+        }
+
+        const matches = currentEpisodes
+            .map((episode, index) => {
+                if (!selectedIdSet.has(episode.Id)) {
+                    return null;
+                }
+
+                const chapterRange = findClosestMatchingChapterRange(episode, referenceDuration, toleranceSeconds);
+                if (!chapterRange) {
+                    return null;
+                }
+
+                return { episode, index, chapterRange };
+            })
+            .filter(
+                (
+                    entry,
+                ): entry is { episode: EpisodeItem; index: number; chapterRange: ChapterRange } => entry !== null,
+            );
+
+        if (matches.length === 0) {
+            setStatusMessage(
+                "No chapter durations matched the selected reference within " +
+                    String(Math.round(toleranceSeconds * 1000) / 1000) +
+                    " seconds.",
+                "var(--is-warning)",
+            );
+            return false;
+        }
+
+        isBatchSaving = true;
+        syncBulkButtonState();
+
+        let updated = 0;
+        let failed = 0;
+        let firstError: string | null = null;
+
+        try {
+            for (let index = 0; index < matches.length; index++) {
+                const match = matches[index];
+                setStatusMessage(
+                    "Saving " + String(index + 1) + "/" + String(matches.length) + " " + match.episode.Name + "...",
+                    "var(--is-text-muted)",
+                );
+
+                const currentResult = currentTimestamps[match.index];
+                const existingSegment = currentResult?.ok === true ? currentResult.data?.[modeKey] : undefined;
+                const currentStart = existingSegment ? existingSegment.Start : 0;
+                const currentEnd = existingSegment ? existingSegment.End : 0;
+
+                const response = await api.updateEpisodeTimestamp(match.episode.Id, {
+                    mode: modeKey,
+                    currentStart,
+                    currentEnd,
+                    start: match.chapterRange.start,
+                    end: match.chapterRange.end,
+                });
+
+                if (response.ok) {
+                    updated += 1;
+                    const nextMap = {
+                        ...(currentResult?.ok === true ? currentResult.data ?? {} : {}),
+                        [modeKey]: { Start: match.chapterRange.start, End: match.chapterRange.end },
+                    };
+                    const updatedResult = { ok: true, status: response.status, data: nextMap };
+                    currentTimestamps[match.index] = updatedResult;
+                    syncHasSegmentState(match.index, updatedResult);
+                    if (externalTimestampsRef) {
+                        externalTimestampsRef[match.index] = updatedResult;
+                    }
+                } else {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = match.episode.Name + " (HTTP " + response.status + ")";
+                    }
+                }
+            }
+        } finally {
+            isBatchSaving = false;
+            syncBulkButtonState();
+        }
+
+        rebuildList(true);
+
+        const skipped = selectedCount - matches.length;
+        const summary =
+            "Matched and updated " +
+            String(updated) +
+            " " +
+            modeLabel +
+            " timestamps, skipped " +
+            String(skipped) +
+            (failed > 0 ? ", failed " + String(failed) : "") +
+            ".";
+
+        setStatusMessage(
+            failed > 0 && firstError ? summary + " First error: " + firstError : summary,
+            failed > 0 ? "var(--is-warning)" : "var(--is-success)",
+        );
+
+        return true;
+    }
+
     async function handleBulkDurationClick(): Promise<void> {
         if (isBatchSaving || currentEpisodes.length === 0) {
             return;
@@ -785,8 +983,59 @@ export function episodeList(): {
     };
     bulkAddButton.addEventListener("click", handleBulkAddButtonClick);
 
+    async function handleBulkChapterMatchClick(): Promise<void> {
+        if (isBatchSaving || currentEpisodes.length === 0) {
+            return;
+        }
+
+        const selectedIds = getSelectedEpisodeIds();
+        const referenceEpisodes = currentEpisodes
+            .filter((episode) => selectedIds.includes(episode.Id))
+            .map((episode) => ({
+                id: episode.Id,
+                name: episode.Name,
+                episodeNumber: episode.IndexNumber,
+                durationSeconds: getEpisodeDurationSeconds(episode),
+                chapters: episode.Chapters,
+            }));
+        let pendingRequest: { modeKey: string; duration: number; tolerance: number } | null = null;
+
+        await timestampBulkChapterMatchDialog({
+            title: "Match Chapters to Timestamp Type",
+            modes: TIMESTAMP_MODES,
+            defaultModeKey: TIMESTAMP_MODES[0]?.key,
+            referenceEpisodes,
+            defaultReferenceEpisodeId: referenceEpisodes[0]?.id,
+            onSave: async (values) => {
+                pendingRequest = values;
+                return true;
+            },
+        });
+
+        const bulkRequest = pendingRequest as { modeKey: string; duration: number; tolerance: number } | null;
+        if (!bulkRequest) {
+            return;
+        }
+
+        await applyBulkChapterMatch(
+            bulkRequest.modeKey,
+            bulkRequest.duration,
+            bulkRequest.tolerance,
+            selectedIds,
+        );
+    }
+
+    const handleBulkChapterMatchButtonClick = () => {
+        void handleBulkChapterMatchClick().catch(console.error);
+    };
+    bulkChapterMatchButton.addEventListener("click", handleBulkChapterMatchButtonClick);
+
     return {
         container,
+
+        getSelectedEpisodeIds() {
+            return getSelectedEpisodeIds();
+        },
 
         render(
             episodes: EpisodeItem[],
@@ -849,6 +1098,7 @@ export function episodeList(): {
             invertSelectionButton.removeEventListener("click", handleInvertSelectionButtonClick);
             bulkDurationButton.removeEventListener("click", handleBulkDurationButtonClick);
             bulkAddButton.removeEventListener("click", handleBulkAddButtonClick);
+            bulkChapterMatchButton.removeEventListener("click", handleBulkChapterMatchButtonClick);
         },
     };
 }

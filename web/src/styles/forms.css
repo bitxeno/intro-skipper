@@ -828,6 +828,17 @@ a {
     opacity: 0.9;
 }
 
+.is-bulk-chapter-match-dialog {
+    max-width: 520px;
+}
+
+.is-bulk-chapter-match-selection {
+    margin-top: 10px;
+    font-size: 0.85em;
+    color: var(--is-text-muted);
+    line-height: 1.5;
+}
+
 /* Chapter picker dialog. */
 
 .is-chapter-picker-dialog {
