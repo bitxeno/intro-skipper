@@ -6,7 +6,7 @@ import { timestampBulkAddDialog } from "./timestamp-bulk-add-dialog.ts";
 import { timestampBulkEditDialog } from "./timestamp-bulk-edit-dialog.ts";
 import { timestampEditDialog } from "./timestamp-edit-dialog.ts";
 import { chapterPickerDialog } from "./chapter-picker-dialog.ts";
-import type { EpisodeItem, TimestampMap, ApiResult } from "../types.ts";
+import type { EpisodeItem, TimestampMap, ApiResult, EpisodeChapter } from "../types.ts";
 
 /** Delay before filtering the episode list (ms). */
 const FILTER_DEBOUNCE_MS = 120;
@@ -344,8 +344,8 @@ export function episodeList(): {
                             }
                         });
                     },
-                    ep.Id,
                     ep.RunTimeTicks ? ep.RunTimeTicks / 10_000_000 : undefined,
+                    ep.Chapters,
                 ),
             );
         }
@@ -380,8 +380,8 @@ export function episodeList(): {
         ts: TimestampMap,
         onEdit?: (mode: { key: string; label: string }, seg: { Start: number; End: number }) => void,
         onChapterSelect?: (mode: { key: string; label: string }, range: { start: number; end: number }) => void,
-        episodeId?: string,
         episodeDurationSeconds?: number,
+        chapters?: EpisodeChapter[],
     ): HTMLElement {
         const row = el("div", { className: "ts-episode-timestamps" });
         for (const mode of TIMESTAMP_MODES) {
@@ -414,13 +414,13 @@ export function episodeList(): {
                 entry.append(el("span", { className: "ts-timestamp-missing" }, mode.label + " \u2013"));
             }
 
-            if (onChapterSelect && episodeId && episodeDurationSeconds !== undefined) {
+            if (onChapterSelect && episodeDurationSeconds !== undefined && chapters && chapters.length > 0) {
                 const chBtn = el("button", { className: "ts-timestamp-chapter-btn", type: "button" }, "Ch.");
                 chBtn.setAttribute("aria-label", "Set " + mode.label + " from chapter");
                 chBtn.addEventListener("click", () => {
                     chapterPickerDialog({
                         title: "Set " + mode.label + " from Chapter",
-                        episodeId,
+                        chapters,
                         episodeDurationSeconds,
                         onSelect: (range) => {
                             onChapterSelect(mode, range);

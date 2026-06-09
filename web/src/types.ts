@@ -188,6 +188,7 @@ export type JellyfinEpisodeItem = {
     IndexNumber?: number;
     RunTimeTicks?: number;
     SeriesName?: string;
+    Chapters?: EpisodeChapter[];
 };
 
 // Simplified Jellyfin SDK shapes used by the timestamps UI.
@@ -220,6 +221,7 @@ export type EpisodeItem = {
     IndexNumber: number | null;
     RunTimeTicks: number | null;
     SeriesName: string | null;
+    Chapters?: EpisodeChapter[];
 };
 
 // Shared options for generated form controls.

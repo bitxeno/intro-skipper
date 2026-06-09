@@ -1,12 +1,12 @@
 import { el } from "./dom.ts";
 import { formatTime } from "../utils.ts";
-import * as api from "../store/api.ts";
+import type { EpisodeChapter } from "../types.ts";
 
 const TICKS_PER_SECOND = 10_000_000;
 
 export type ChapterPickerDialogOptions = {
     title: string;
-    episodeId: string;
+    chapters: EpisodeChapter[];
     episodeDurationSeconds: number;
     onSelect: (range: { start: number; end: number }) => void;
 };
@@ -73,57 +73,44 @@ export function chapterPickerDialog(opts: ChapterPickerDialogOptions): void {
     document.body.append(dialog);
     dialog.showModal();
 
-    // Fetch chapters
-    void loadChapters();
-
-    async function loadChapters(): Promise<void> {
-        const result = await api.getEpisodeChapters(opts.episodeId);
-
-        if (!result.ok || !result.data) {
-            chapterList.replaceChildren();
-            setError("Failed to load chapters.");
-            return;
-        }
-
-        const chapters = result.data;
-        if (chapters.length === 0) {
-            chapterList.replaceChildren();
-            setError("No chapters available for this episode.");
-            return;
-        }
-
+    const chapters = opts.chapters;
+    if (chapters.length === 0) {
         chapterList.replaceChildren();
+        setError("No chapters available for this episode.");
+        return;
+    }
 
-        for (let i = 0; i < chapters.length; i++) {
-            const chapter = chapters[i];
-            const startSeconds = ticksToSeconds(chapter.StartPositionTicks);
-            const endSeconds = i + 1 < chapters.length
-                ? ticksToSeconds(chapters[i + 1].StartPositionTicks)
-                : opts.episodeDurationSeconds;
+    chapterList.replaceChildren();
 
-            const item = el("button", { className: "is-chapter-item", type: "button" });
+    for (let i = 0; i < chapters.length; i++) {
+        const chapter = chapters[i];
+        const startSeconds = ticksToSeconds(chapter.StartPositionTicks);
+        const endSeconds = i + 1 < chapters.length
+            ? ticksToSeconds(chapters[i + 1].StartPositionTicks)
+            : opts.episodeDurationSeconds;
 
-            const nameSpan = el(
-                "span",
-                { className: "is-chapter-name" },
-                chapter.Name || "Unnamed Chapter",
-            );
+        const item = el("button", { className: "is-chapter-item", type: "button" });
 
-            const timeSpan = el(
-                "span",
-                { className: "is-chapter-time" },
-                formatTime(startSeconds) + " \u2013 " + formatTime(endSeconds) +
-                " (" + formatTime(Math.max(0, endSeconds - startSeconds)) + ")",
-            );
+        const nameSpan = el(
+            "span",
+            { className: "is-chapter-name" },
+            chapter.Name || "Unnamed Chapter",
+        );
 
-            item.append(nameSpan, timeSpan);
+        const timeSpan = el(
+            "span",
+            { className: "is-chapter-time" },
+            formatTime(startSeconds) + " \u2013 " + formatTime(endSeconds) +
+            " (" + formatTime(Math.max(0, endSeconds - startSeconds)) + ")",
+        );
 
-            item.addEventListener("click", () => {
-                opts.onSelect({ start: startSeconds, end: endSeconds });
-                cleanup();
-            });
+        item.append(nameSpan, timeSpan);
 
-            chapterList.append(item);
-        }
+        item.addEventListener("click", () => {
+            opts.onSelect({ start: startSeconds, end: endSeconds });
+            cleanup();
+        });
+
+        chapterList.append(item);
     }
 }

@@ -114,6 +114,7 @@ export async function getEpisodes(seriesId: string, seasonId: string): Promise<E
     const params = new URLSearchParams({
         seasonId,
         enableImages: "true",
+        fields: "Chapters",
     });
     const result = await getJson<JellyfinItemsResponse<JellyfinEpisodeItem>>(
         `Shows/${encodeURIComponent(seriesId)}/Episodes?${params.toString()}`,
@@ -130,6 +131,7 @@ export async function getEpisodes(seriesId: string, seasonId: string): Promise<E
             IndexNumber: item.IndexNumber ?? null,
             RunTimeTicks: item.RunTimeTicks ?? null,
             SeriesName: item.SeriesName ?? null,
+            Chapters: item.Chapters,
         }));
 }
 
