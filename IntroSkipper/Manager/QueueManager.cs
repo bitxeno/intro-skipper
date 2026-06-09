@@ -7,6 +7,7 @@
 using System.Text.RegularExpressions;
 using IntroSkipper.Configuration;
 using IntroSkipper.Data;
+using IntroSkipper.Helper;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Extensions;
@@ -438,6 +439,7 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
                 // Jellyfin does not automatically probe .strm duration
                 if (candidate.IsShortcut && candidate.Duration == 0)
                 {
+                    using var shortcutLease = ShortcutProcessingThrottle.Acquire(candidate);
                     var item = _libraryManager.GetItemById(candidate.EpisodeId);
 
                     if (item != null)
