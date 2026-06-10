@@ -118,6 +118,10 @@ export function deleteEpisodeTimestamp(
     return fetchWithAuth(`Episode/${encodeURIComponent(episodeId)}/Timestamp?${params.toString()}`, "DELETE");
 }
 
+export function refreshEpisodeMetadata(itemIds: string[]): Promise<Response> {
+    return fetchWithAuth("Episode/RefreshMetadata", "POST", JSON.stringify(itemIds));
+}
+
 // Per-season analyzer actions.
 export function getAnalyzerActions(seasonId: string): Promise<ApiResult<AnalyzerActions>> {
     return getJson<AnalyzerActions>(`Intros/AnalyzerActions/${encodeURIComponent(seasonId)}`);

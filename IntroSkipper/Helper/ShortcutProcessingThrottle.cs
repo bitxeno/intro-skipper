@@ -69,6 +69,35 @@ internal static class ShortcutProcessingThrottle
         return new Lease(episode.EpisodeId);
     }
 
+    internal static IDisposable? Acquire(Guid episodeId)
+    {
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        var interval = config.ProcessShortcutInterval <= 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromSeconds(config.ProcessShortcutInterval);
+
+        if (interval <= TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        _semaphore.Wait();
+
+        var wait = GetWaitBeforeProcessing(
+            episodeId,
+            DateTimeOffset.UtcNow,
+            _lastEpisodeId,
+            _lastCompletedAt,
+            interval);
+
+        if (wait > TimeSpan.Zero)
+        {
+            Thread.Sleep(wait);
+        }
+
+        return new Lease(episodeId);
+    }
+
     private sealed class Lease(Guid episodeId) : IDisposable
     {
         private int _disposed;

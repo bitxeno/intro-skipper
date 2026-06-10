@@ -50,6 +50,8 @@ public partial class ChapterAnalyzer(ILogger<ChapterAnalyzer> logger) : IMediaFi
 
         var episodesWithoutIntros = analysisQueue.Where(e => e.NeedsAnalysis(mode)).ToList();
 
+        _logger.LogInformation("Analyzing {Count} episodes using ChapterAnalyzer for mode {Mode}", episodesWithoutIntros.Count, mode);
+
         foreach (var episode in episodesWithoutIntros)
         {
             if (cancellationToken.IsCancellationRequested)

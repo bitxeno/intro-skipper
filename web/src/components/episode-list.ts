@@ -82,6 +82,12 @@ export function episodeList(): {
         "Bulk Add",
     ) as HTMLButtonElement;
     bulkAddButton.setAttribute("aria-label", "Set timestamps for selected episodes");
+    const refreshMetadataButton = el(
+        "button",
+        { className: "ts-bulk-edit-btn", type: "button" },
+        "Refresh Metadata",
+    ) as HTMLButtonElement;
+    refreshMetadataButton.setAttribute("aria-label", "Force metadata refresh for selected episodes");
     const bulkChapterMatchButton = el(
         "button",
         { className: "ts-bulk-edit-btn", type: "button" },
@@ -97,6 +103,7 @@ export function episodeList(): {
         invertSelectionButton,
         bulkDurationButton,
         bulkAddButton,
+        refreshMetadataButton,
         bulkChapterMatchButton,
     );
     filterBar.append(filterInput, filterActions);
@@ -153,6 +160,7 @@ export function episodeList(): {
         const selectedCount = getSelectedEpisodeIds().length;
         bulkDurationButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
         bulkAddButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
+        refreshMetadataButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
         bulkChapterMatchButton.disabled = isBatchSaving || currentEpisodes.length === 0 || selectedCount === 0;
         selectAllButton.disabled =
             isBatchSaving || currentEpisodes.length === 0 || selectedCount === currentEpisodes.length;
@@ -982,6 +990,54 @@ export function episodeList(): {
         void handleBulkAddClick().catch(console.error);
     };
     bulkAddButton.addEventListener("click", handleBulkAddButtonClick);
+
+    async function handleRefreshMetadataClick(): Promise<void> {
+        if (isBatchSaving || currentEpisodes.length === 0) {
+            return;
+        }
+
+        const selectedIds = getSelectedEpisodeIds();
+        if (selectedIds.length === 0) {
+            return;
+        }
+
+        isBatchSaving = true;
+        syncBulkButtonState();
+
+        try {
+            setStatusMessage(
+                "Refreshing metadata for " + String(selectedIds.length) + " episode(s)\u2026",
+                "var(--is-text-muted)",
+            );
+
+            const response = await api.refreshEpisodeMetadata(selectedIds);
+
+            if (response.ok) {
+                setStatusMessage(
+                    "Refreshed metadata for " + String(selectedIds.length) + " episode(s).",
+                    "var(--is-success)",
+                );
+            } else {
+                setStatusMessage(
+                    "Refresh failed (HTTP " + String(response.status) + ").",
+                    "var(--is-warning)",
+                );
+            }
+        } catch (err: unknown) {
+            setStatusMessage(
+                "Refresh failed: " + (err instanceof Error ? err.message : "Unknown error"),
+                "var(--is-warning)",
+            );
+        } finally {
+            isBatchSaving = false;
+            syncBulkButtonState();
+        }
+    }
+
+    const handleRefreshMetadataButtonClick = () => {
+        void handleRefreshMetadataClick().catch(console.error);
+    };
+    refreshMetadataButton.addEventListener("click", handleRefreshMetadataButtonClick);
 
     async function handleBulkChapterMatchClick(): Promise<void> {
         if (isBatchSaving || currentEpisodes.length === 0) {

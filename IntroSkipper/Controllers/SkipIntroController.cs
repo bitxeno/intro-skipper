@@ -9,11 +9,15 @@
 
 using System.Net.Mime;
 using IntroSkipper.Data;
+using IntroSkipper.Helper;
 using IntroSkipper.Manager;
 using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaSegments;
+using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.IO;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -27,10 +31,16 @@ namespace IntroSkipper.Controllers;
 [Authorize]
 [ApiController]
 [Produces(MediaTypeNames.Application.Json)]
-public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateManager, IServiceProvider serviceProvider) : ControllerBase
+public class SkipIntroController(
+    MediaSegmentUpdateManager mediaSegmentUpdateManager,
+    IServiceProvider serviceProvider,
+    ILibraryManager libraryManager,
+    IFileSystem fileSystem) : ControllerBase
 {
     private readonly MediaSegmentUpdateManager _mediaSegmentUpdateManager = mediaSegmentUpdateManager;
     private readonly IServiceProvider _serviceProvider = serviceProvider;
+    private readonly ILibraryManager _libraryManager = libraryManager;
+    private readonly IFileSystem _fileSystem = fileSystem;
 
     /// <summary>
     /// Updates the timestamps for the provided episode.
@@ -178,6 +188,50 @@ public class SkipIntroController(MediaSegmentUpdateManager mediaSegmentUpdateMan
         if (Plugin.Instance.Configuration.UpdateMediaSegments)
         {
             await RefreshMediaSegmentsAsync(rawItem.Id, rawItem is Episode e ? e.SeasonId : rawItem.Id, cancellationToken).ConfigureAwait(false);
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Forces a full metadata refresh on the provided items.
+    /// </summary>
+    /// <param name="itemIds">Item IDs to refresh.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">Refresh completed.</response>
+    /// <returns>No content.</returns>
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [HttpPost("Episode/RefreshMetadata")]
+    public async Task<ActionResult> RefreshMetadataAsync(
+        [FromBody] Guid[] itemIds,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var id in itemIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var item = _libraryManager.GetItemById(id);
+            if (item is null)
+            {
+                continue;
+            }
+
+            using var shortcutLease = ShortcutProcessingThrottle.Acquire(id);
+
+            var refreshOptions = new MetadataRefreshOptions(new DirectoryService(_fileSystem))
+            {
+                MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
+                ImageRefreshMode = MetadataRefreshMode.None,
+                EnableRemoteContentProbe = true,
+                ReplaceAllImages = false,
+                ReplaceAllMetadata = false,
+                ForceSave = false,
+                IsAutomated = false,
+                RemoveOldMetadata = false,
+                RegenerateTrickplay = false
+            };
+
+            await item.RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
         }
 
         return NoContent();

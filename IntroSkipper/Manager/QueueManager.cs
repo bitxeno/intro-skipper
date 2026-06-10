@@ -439,11 +439,10 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
                 // Jellyfin does not automatically probe .strm duration
                 if (candidate.IsShortcut && candidate.Duration == 0)
                 {
-                    using var shortcutLease = ShortcutProcessingThrottle.Acquire(candidate);
                     var item = _libraryManager.GetItemById(candidate.EpisodeId);
-
                     if (item != null)
                     {
+                        using var shortcutLease = ShortcutProcessingThrottle.Acquire(candidate);
                         var refreshOptions = new MetadataRefreshOptions(new DirectoryService(_fileSystem))
                         {
                             MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
@@ -452,7 +451,7 @@ public partial class QueueManager(ILogger<QueueManager> logger, ILibraryManager 
                             ReplaceAllImages = false,
                             ReplaceAllMetadata = false,
                             ForceSave = false,
-                            IsAutomated = true,
+                            IsAutomated = false,
                             RemoveOldMetadata = false,
                             RegenerateTrickplay = false
                         };
