@@ -23,6 +23,8 @@ namespace IntroSkipper
         /// <inheritdoc />
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
+            serviceCollection.AddSingleton<RefreshMetadataService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<RefreshMetadataService>());
             serviceCollection.AddHostedService<Entrypoint>();
             serviceCollection.AddSingleton<IMediaSegmentProvider, SegmentProvider>();
             serviceCollection.AddTransient<MediaSegmentUpdateManager>();

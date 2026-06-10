@@ -1014,7 +1014,7 @@ export function episodeList(): {
 
             if (response.ok) {
                 setStatusMessage(
-                    "Refreshed metadata for " + String(selectedIds.length) + " episode(s).",
+                    "Refresh queued for " + String(selectedIds.length) + " episode(s).",
                     "var(--is-success)",
                 );
             } else {
